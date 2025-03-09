@@ -88,16 +88,51 @@ npm run preview
 ## Project Structure
 - `/client` - Frontend code
   - `/src` - Source JavaScript files
+    - `/components` - Component-based architecture
+      - `/core` - Core game systems (EventBus, Renderer, Game)
+      - `/controls` - Input handling
+      - `/entities` - Entity management 
+      - `/network` - Socket.io communication
+      - `/ui` - User interface components
+      - `/world` - World and environment
+      - `/utils` - Helper utilities
+    - `/config` - Game configuration
+    - `/assets` - Game assets
   - `/dist` - Bundled output (production)
 - `/server` - Backend code
 - `CLAUDE.md` - Development guidelines and coding standards
 - `PROGRESS.md` - Detailed development progress documentation
-- `global_rules.md` - Technical specifications and architecture guidelines
+- `global_rules.md` - Technical specifications
+- `architecture.md` - Component architecture design
+
+## Component Architecture
+Guild Clash uses a component-based architecture for better maintainability and extensibility:
+
+1. **Core Systems**
+   - EventBus: Centralized event system for inter-component communication
+   - Renderer: Three.js rendering pipeline management
+   - Game: Main game controller and state manager
+
+2. **Entity System**
+   - Entity: Base class for all game objects
+   - Player: Local player entity with input handling
+   - OtherPlayer: Network-synchronized player entities
+   - EntityManager: Manages entity lifecycle
+
+3. **World Components**
+   - Grid: Ground plane and grid-based positioning
+
+4. **Input System**
+   - InputManager: Keyboard and mouse input handling
+
+5. **Network System**
+   - NetworkManager: Socket.io communication and synchronization
 
 ## Documentation
 - See `PROGRESS.md` for detailed development history and implementation details
 - See `CLAUDE.md` for development guidelines and coding standards
-- See `global_rules.md` for technical specifications and architecture decisions
+- See `global_rules.md` for technical specifications
+- See `architecture.md` for component architecture design
 
 ## Current Status
 The project has implemented core multiplayer gameplay, character classes, and isometric world rendering. See PROGRESS.md for complete details on what has been implemented so far.

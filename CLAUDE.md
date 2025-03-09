@@ -76,6 +76,16 @@
 ## Project Structure
 - `/client` - Frontend code
   - `/src` - Source JavaScript files
+    - `/components` - Component-based architecture
+      - `/core` - Core game systems (EventBus, Renderer, Game)
+      - `/controls` - Input handling components
+      - `/entities` - Entity system components
+      - `/network` - Network communication components
+      - `/ui` - UI components (future)
+      - `/world` - World and environment components
+      - `/utils` - Utility functions and helpers
+    - `/config` - Game configuration files
+    - `/assets` - Game assets (textures, models, etc.)
   - `/dist` - Bundled output (production)
   - `/public` - Static assets
 - `/server` - Backend code
@@ -83,6 +93,34 @@
   - `/routes` - API endpoints (future)
   - `/controllers` - Business logic (future)
 - `/docs` - Documentation (future)
+
+## Component Architecture
+The client follows a component-based architecture for better maintainability:
+
+### Core Components
+- **EventBus**: Central pub/sub event system for decoupled communication
+- **Renderer**: Manages Three.js rendering pipeline, camera, and scene
+- **Game**: Main game controller that coordinates other systems
+
+### Entity System 
+- **Entity**: Base class with common properties and lifecycle methods
+- **Player**: Local player entity with input handling
+- **OtherPlayer**: Remote player entities with position interpolation
+- **EntityManager**: Central registry and manager for all game entities
+
+### World Components
+- **Grid**: Creates and manages the ground grid with grid-based positioning
+
+### Input System
+- **InputManager**: Handles keyboard/mouse input and provides abstracted events
+
+### Network System
+- **NetworkManager**: Manages Socket.io connection and message handling
+
+### UI System (future)
+- **UIManager**: Manages UI screens and elements
+- **CharacterSelect**: Character selection screen
+- **GameUI**: In-game UI elements
 
 ## Git Workflow
 - **Main Branch**: `main` (production-ready code)
