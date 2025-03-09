@@ -9,6 +9,8 @@
             margin: 0;
             overflow: hidden;
             background-color: #000;
+            font-family: 'Arial', sans-serif;
+            color: white;
         }
         canvas {
             display: block;
@@ -24,16 +26,215 @@
         .ui-overlay button, .ui-overlay div {
             pointer-events: auto;
         }
+        
+        /* Character Selection Menu */
+        .character-selection {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        
+        .character-selection h1 {
+            font-size: 2.5rem;
+            margin-bottom: 2rem;
+            color: #f1c40f;
+            text-shadow: 0 0 10px rgba(241, 196, 15, 0.5);
+        }
+        
+        .character-selection .classes {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        .character-class {
+            background-color: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 1.5rem;
+            width: 200px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .character-class:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-5px);
+        }
+        
+        .character-class.selected {
+            border-color: #f1c40f;
+            background-color: rgba(241, 196, 15, 0.2);
+            box-shadow: 0 0 15px rgba(241, 196, 15, 0.5);
+        }
+        
+        .class-icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 1rem;
+            border-radius: 50%;
+        }
+        
+        .clerk-icon {
+            background-color: #4287f5;
+        }
+        
+        .warrior-icon {
+            background-color: #e74c3c;
+        }
+        
+        .ranger-icon {
+            background-color: #2ecc71;
+        }
+        
+        .character-class h2 {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .character-class p {
+            font-size: 0.9rem;
+            color: #ccc;
+        }
+        
+        .character-class .stats {
+            margin-top: 1rem;
+            text-align: left;
+            font-size: 0.9rem;
+        }
+        
+        .start-button {
+            background-color: #f1c40f;
+            color: #000;
+            border: none;
+            padding: 1rem 2rem;
+            font-size: 1.2rem;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: none;
+        }
+        
+        .start-button:hover {
+            background-color: #f39c12;
+            transform: scale(1.05);
+        }
+        
+        .start-button.visible {
+            display: block;
+        }
+        
+        /* In-game UI */
+        .game-ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            display: none;
+        }
+        
+        .game-ui.visible {
+            display: block;
+        }
+        
+        .health-bar {
+            width: 200px;
+            height: 20px;
+            background-color: #333;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 5px;
+        }
+        
+        .health-fill {
+            height: 100%;
+            background-color: #e74c3c;
+            width: 100%;
+        }
+        
+        .player-info {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        
+        .player-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
     </style>
 </head>
 <body>
     <!-- Canvas for three.js rendering -->
     <canvas id="game-canvas"></canvas>
     
+    <!-- Character Selection Menu -->
+    <div class="character-selection" id="character-selection">
+        <h1>Choose Your Class</h1>
+        <div class="classes">
+            <div class="character-class" id="clerk-class">
+                <div class="class-icon clerk-icon"></div>
+                <h2>Clerk</h2>
+                <p>Magic user with speed and agility</p>
+                <div class="stats">
+                    <div>Health: 80</div>
+                    <div>Speed: 15</div>
+                </div>
+            </div>
+            
+            <div class="character-class" id="warrior-class">
+                <div class="class-icon warrior-icon"></div>
+                <h2>Warrior</h2>
+                <p>Tank with heavy armor and strength</p>
+                <div class="stats">
+                    <div>Health: 120</div>
+                    <div>Speed: 8</div>
+                </div>
+            </div>
+            
+            <div class="character-class" id="ranger-class">
+                <div class="class-icon ranger-icon"></div>
+                <h2>Ranger</h2>
+                <p>Balanced fighter with ranged attacks</p>
+                <div class="stats">
+                    <div>Health: 100</div>
+                    <div>Speed: 12</div>
+                </div>
+            </div>
+        </div>
+        <button class="start-button" id="start-game">Start Game</button>
+    </div>
+    
+    <!-- In-game UI -->
+    <div class="game-ui" id="game-ui">
+        <div class="player-info">
+            <div class="player-color" id="player-color"></div>
+            <span id="player-class">Class: </span>
+        </div>
+        <div class="health-bar">
+            <div class="health-fill" id="health-fill"></div>
+        </div>
+        <div id="player-stats">Health: 100</div>
+    </div>
+    
     <!-- UI Overlay for HTML/CSS UI elements -->
     <div class="ui-overlay" id="ui-overlay"></div>
     
-    <!-- Bundle from webpack -->
-    <script src="dist/bundle.js"></script>
+    <!-- Vite entry point -->
+    <script type="module" src="/src/main.js"></script>
 </body>
 </html>
