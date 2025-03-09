@@ -1,0 +1,2 @@
+# gclash
+Guild Clash
