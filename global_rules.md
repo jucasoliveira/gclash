@@ -29,7 +29,7 @@
   - Version: Latest stable (check https://howlerjs.com/).
 - Real-Time Communication: Socket.io-client
   - Purpose: WebSocket connection to server for multiplayer sync (player positions, combat).
-- Build Tools: Webpack
+- Build Tools: Vite
   - Purpose: Bundle JavaScript, assets, and dependencies.
   - Alternative: Rollup (if simpler bundling is preferred).
 - Transpiler: Babel
@@ -61,7 +61,7 @@
 - Project Structure:
   - `/client`: Front-end code (three.js, HTML, CSS, JS).
   - `/server`: Back-end code (Node.js, Express, Socket.io).
-  - `/dist`: Bundled front-end files (output from Webpack).
+  - `/dist`: Bundled front-end files (output from Vite).
 - File Naming: CamelCase for JS files (e.g., `gameLogic.js`), kebab-case for assets (e.g., `player-sprite.png`).
 - Version Control: Git
   - Repository: GitHub or similar.
