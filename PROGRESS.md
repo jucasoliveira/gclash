@@ -188,6 +188,37 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
   - Reduced duplication
   - Centralized event communication
 
+### Step 11: Combat System Implementation
+- Implemented class-specific primary attacks:
+  - **Clerk**: Magic bolt (ranged, blue sphere projectile)
+  - **Warrior**: Melee swing (close range, red arc)
+  - **Ranger**: Arrow (ranged, green projectile)
+- Added health and damage system:
+  - Health bars above players that update in real-time
+  - Floating damage numbers when attacks hit targets
+  - Color-coded health indicators (green/yellow/red)
+  - Health reduction upon receiving damage
+- Implemented combat feedback:
+  - Visual attack effects and projectiles
+  - Screen shake and flash when taking damage
+  - Attack cooldowns with visual indicators
+  - Death and respawn effects
+- Created death and respawn mechanics:
+  - Player death when health reaches zero
+  - Death screen and particle effects
+  - Automatic respawn with position randomization
+  - Respawn effects with particles and light bursts
+- Enhanced network communication for combat:
+  - New Socket.io events for attacks, damage, death, and respawn
+  - Health synchronization across all clients
+  - Attack visualization visible to all players
+  - Server-side tracking of player health
+- Added combat-related bug fixes:
+  - Fixed health calculation and NaN errors
+  - Ensured consistent combat visuals across clients
+  - Improved error handling for edge cases
+  - Enhanced cleanup of temporary effects
+
 ## Socket.io Events Implementation
 - **playerJoin**: Sent when player connects with player data and class
 - **existingPlayers**: Received by new players with data about all current players
@@ -195,21 +226,36 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
 - **playerMove**: Sent when player position changes (WASD movement)
 - **playerMoved**: Received when other players move to update their position
 - **playerLeft**: Received when a player disconnects to remove them from scene
+- **playerAttack**: Sent when player performs an attack with target and damage data
+- **playerAttacked**: Broadcast when a player attacks to show effect to all clients
+- **playerHealthChange**: Sent when player's health changes
+- **playerHealthChanged**: Broadcast player health updates to all clients
+- **playerDeath**: Sent when player's health reaches zero
+- **playerDied**: Broadcast to notify all clients when a player dies
+- **playerRespawn**: Sent when a player respawns after death
+- **playerRespawned**: Broadcast to update all clients when a player respawns
 
 ## Current Features
 - **3D Isometric World**: True isometric view with grid-based ground
 - **Character Selection**: Three distinct classes with different stats
 - **Real-time Multiplayer**: Players can see and interact in the same world
-- **Controls**: WASD for player movement, arrow keys for camera
+- **Controls**: WASD for player movement, arrow keys for camera, mouse for attacks
 - **Class-Based Visuals**: Different colored models based on class choice
+- **Combat System**: Class-specific attacks with visual effects and damage
+- **Health System**: Health bars, damage visualization, and death mechanics
+- **Respawn System**: Automatic respawn with animation after death
+- **Network Synchronization**: Consistent game state across all clients
 - **Modern Development**: Vite-based development environment
 
 ## Next Steps
-1. **UI Development**: Enhance game UI with more player information and controls
-2. **Game Logic**: Implement core gameplay mechanics and rules
-3. **Class Abilities**: Add special abilities unique to each character class
-4. **Multiplayer Features**: Enhance real-time synchronization for tournaments and battle royale
-5. **Database Integration**: Set up player data persistence and leaderboard
+1. **Advanced Combat**: Add secondary and ultimate abilities for each class
+2. **Combat Balancing**: Adjust damage, health, and cooldowns for balanced gameplay
+3. **Environment Interaction**: Add obstacles, terrain effects, and interactive elements
+4. **Tournament System**: Implement 1v1 tournament mode with brackets
+5. **Battle Royale**: Create 40-player battle royale mode with shrinking play area
+6. **Database Integration**: Set up player data persistence and leaderboard
+7. **Audio System**: Add sound effects for combat, movement, and environment
+8. **Enhanced Visuals**: Improve player models, effects, and environment
 
 ## Technical Notes
 - The project uses a client-server architecture with real-time communication

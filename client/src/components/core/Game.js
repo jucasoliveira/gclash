@@ -45,6 +45,51 @@ class Game {
     // Set up UI event listeners
     this._setupUIEvents();
     
+    // Listen for player health changes
+    eventBus.on('network.playerHealthChanged', (data) => {
+      if (this.player && data.id === this.player.id) {
+        console.log(`Game received health change for player: ${data.health}/${data.maxHealth}`);
+        this.updateHealthUI(data.health, data.maxHealth);
+      }
+    });
+    
+    // Listen for player attacks
+    eventBus.on('network.playerAttacked', (data) => {
+      if (this.player && data.targetId === this.player.id) {
+        console.log(`Game received attack on player: ${data.damage} damage`);
+        
+        // Update health directly if we have the player reference
+        if (this.player.health !== undefined) {
+          // Calculate new health
+          const newHealth = Math.max(0, this.player.health - data.damage);
+          
+          // Update UI immediately
+          this.updateHealthUI(newHealth, this.player.stats.health);
+          
+          // Also update the player object's health
+          this.player.health = newHealth;
+          
+          console.log(`Directly set player health to ${newHealth} from attack and updated UI`);
+          
+          // Force direct DOM update (bypass animation frames)
+          const healthFill = document.getElementById('health-fill');
+          if (healthFill) {
+            const percentage = Math.max(0, Math.min(100, (newHealth / this.player.stats.health) * 100));
+            healthFill.style.width = `${percentage}%`;
+            
+            // Change color based on health percentage
+            if (percentage > 60) {
+              healthFill.style.backgroundColor = '#2ecc71'; // Green for high health
+            } else if (percentage > 30) {
+              healthFill.style.backgroundColor = '#f39c12'; // Orange for medium health
+            } else {
+              healthFill.style.backgroundColor = '#e74c3c'; // Red for low health
+            }
+          }
+        }
+      }
+    });
+    
     // Set game state
     this.state = 'characterSelection';
     this._showCharacterSelection();
@@ -180,6 +225,8 @@ class Game {
       const playerStats = document.getElementById('player-stats');
       const playerColor = document.getElementById('player-color');
       const healthFill = document.getElementById('health-fill');
+      const cooldownLabel = document.querySelector('.cooldown-label');
+      const cooldownFill = document.getElementById('cooldown-fill');
       
       if (playerClass && this.selectedClass) {
         playerClass.textContent = `Class: ${CHARACTER_CLASSES[this.selectedClass].name}`;
@@ -195,6 +242,18 @@ class Game {
       
       if (healthFill) {
         healthFill.style.width = '100%';
+      }
+      
+      // Update attack name in cooldown label
+      if (cooldownLabel && this.selectedClass) {
+        const attackName = CHARACTER_CLASSES[this.selectedClass].abilities.primary.name;
+        cooldownLabel.textContent = `${attackName}:`;
+      }
+      
+      // Set cooldown to ready
+      if (cooldownFill) {
+        cooldownFill.style.width = '100%';
+        cooldownFill.style.backgroundColor = '#2ecc71'; // Green when ready
       }
     }
   }
@@ -220,8 +279,14 @@ class Game {
       // Connect to server
       await networkManager.connect();
       
-      // Create player with selected class
-      entityManager.createPlayer(this.selectedClass);
+      // Create player with selected class and store reference
+      this.player = entityManager.createPlayer(this.selectedClass);
+      
+      // Listen for health changes on our own player
+      eventBus.on(`entity.${this.player.id}.healthChanged`, (data) => {
+        console.log(`Game received local player health change: ${data.health}/${data.maxHealth}`);
+        this.updateHealthUI(data.health, data.maxHealth);
+      });
       
       // Start rendering
       renderer.startRendering();
@@ -279,13 +344,70 @@ class Game {
     const healthFill = document.getElementById('health-fill');
     const playerStats = document.getElementById('player-stats');
     
+    console.log(`CRITICAL: Game.updateHealthUI called with health=${health}, maxHealth=${maxHealth}`);
+    
+    // DIRECT DOM MANIPULATION - forced update without any animation frames
     if (healthFill) {
+      // Ensure health is valid
+      health = Math.max(0, Math.min(maxHealth, health));
       const percentage = Math.max(0, Math.min(100, (health / maxHealth) * 100));
+      
+      // Force immediate update without transition
+      healthFill.style.transition = 'none';
       healthFill.style.width = `${percentage}%`;
+      healthFill.offsetHeight; // Force reflow
+      
+      // Change color based on health percentage
+      if (percentage > 60) {
+        healthFill.style.backgroundColor = '#2ecc71'; // Green for high health
+      } else if (percentage > 30) {
+        healthFill.style.backgroundColor = '#f39c12'; // Orange for medium health
+      } else {
+        healthFill.style.backgroundColor = '#e74c3c'; // Red for low health
+      }
+      
+      // Re-enable transition after a small delay
+      setTimeout(() => {
+        healthFill.style.transition = 'width 0.3s ease-out, background-color 0.3s ease-out';
+      }, 50);
+      
+      console.log(`CRITICAL: Game directly updated health bar to ${percentage}% width`);
+    } else {
+      // Try to recreate the health fill element if it's missing
+      console.error('CRITICAL ERROR: Health fill element not found in Game.updateHealthUI!');
+      const gameUI = document.getElementById('game-ui');
+      const healthBar = document.querySelector('.health-bar');
+      
+      if (healthBar) {
+        console.log('Recreating missing health fill element');
+        const newHealthFill = document.createElement('div');
+        newHealthFill.id = 'health-fill';
+        newHealthFill.className = 'health-fill';
+        
+        // Set initial properties
+        const percentage = Math.max(0, Math.min(100, (health / maxHealth) * 100));
+        newHealthFill.style.width = `${percentage}%`;
+        
+        if (percentage > 60) {
+          newHealthFill.style.backgroundColor = '#2ecc71';
+        } else if (percentage > 30) {
+          newHealthFill.style.backgroundColor = '#f39c12';
+        } else {
+          newHealthFill.style.backgroundColor = '#e74c3c';
+        }
+        
+        healthBar.innerHTML = '';
+        healthBar.appendChild(newHealthFill);
+        console.log('Created new health fill element with width: ' + percentage + '%');
+      }
     }
     
+    // Update the health text
     if (playerStats) {
-      playerStats.textContent = `Health: ${health}`;
+      playerStats.textContent = `Health: ${Math.round(health)}/${maxHealth}`;
+      console.log(`CRITICAL: Game updated player stats text to "${playerStats.textContent}"`);
+    } else {
+      console.warn('Game: Player stats element not found!');
     }
   }
 
@@ -302,7 +424,16 @@ class Game {
     grid.dispose();
     renderer.dispose();
     
-    // Remove event listeners
+    // Remove combat event listeners
+    eventBus.off('network.playerHealthChanged');
+    eventBus.off('network.playerAttacked');
+    
+    // Remove player-specific health event listener
+    if (this.player) {
+      eventBus.off(`entity.${this.player.id}.healthChanged`);
+    }
+    
+    // Remove UI event listeners
     const clerkClass = document.getElementById('clerk-class');
     const warriorClass = document.getElementById('warrior-class');
     const rangerClass = document.getElementById('ranger-class');

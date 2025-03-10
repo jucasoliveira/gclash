@@ -70,7 +70,8 @@ io.on('connection', (socket) => {
       position: playerData.position,
       type: playerData.type,
       class: playerData.class,
-      stats: playerData.stats
+      stats: playerData.stats,
+      health: playerData.stats?.health || 100
     };
     
     // Notify the new player about all existing players
@@ -92,6 +93,120 @@ io.on('connection', (socket) => {
       id: socket.id,
       ...moveData
     });
+  });
+  
+  // Handle player attacks
+  socket.on('playerAttack', (attackData) => {
+    // Broadcast attack to all players (both viewers and the target)
+    // This notifies everyone that an attack is happening
+    io.emit('playerAttacked', {
+      id: socket.id,
+      ...attackData
+    });
+    
+    // Log attack
+    console.log(`Player ${socket.id} attacked player ${attackData.targetId} for ${attackData.damage} damage`);
+    
+    // Update target player's health in server state if we're tracking it
+    if (players[attackData.targetId]) {
+      const targetPlayer = players[attackData.targetId];
+      
+      // Initialize health if not present
+      if (targetPlayer.health === undefined && targetPlayer.stats && targetPlayer.stats.health) {
+        targetPlayer.health = targetPlayer.stats.health;
+      }
+      
+      // Update health if we can
+      if (targetPlayer.health !== undefined) {
+        const oldHealth = targetPlayer.health;
+        targetPlayer.health = Math.max(0, targetPlayer.health - attackData.damage);
+        console.log(`Player ${attackData.targetId} health updated to ${targetPlayer.health}`);
+        
+        // Create health change event data
+        const healthChangeData = {
+          id: attackData.targetId,
+          health: targetPlayer.health,
+          maxHealth: targetPlayer.stats?.health || 100,
+          damage: attackData.damage,
+          attackerId: socket.id
+        };
+        
+        // Explicitly emit to the target player first to ensure they get the update
+        if (io.sockets.sockets.get(attackData.targetId)) {
+          io.to(attackData.targetId).emit('playerHealthChanged', healthChangeData);
+          console.log(`Health change sent directly to target player ${attackData.targetId}`);
+        }
+        
+        // Then broadcast to everyone else, including the attacker
+        io.emit('playerHealthChanged', healthChangeData);
+        
+        // If player died, broadcast death event
+        if (oldHealth > 0 && targetPlayer.health <= 0) {
+          // Create death event data
+          const deathEventData = {
+            id: attackData.targetId,
+            attackerId: socket.id
+          };
+          
+          // First emit directly to the player who died
+          if (io.sockets.sockets.get(attackData.targetId)) {
+            io.to(attackData.targetId).emit('playerDied', deathEventData);
+            console.log(`Death event sent directly to player ${attackData.targetId}`);
+          }
+          
+          // Then broadcast to everyone
+          io.emit('playerDied', deathEventData);
+        }
+      }
+    }
+  });
+  
+  // Handle player health changes
+  socket.on('playerHealthChange', (healthData) => {
+    // Update player health in server state
+    if (players[socket.id]) {
+      players[socket.id].health = healthData.health;
+    }
+    
+    // Broadcast to other players
+    socket.broadcast.emit('playerHealthChanged', {
+      id: socket.id,
+      ...healthData
+    });
+    
+    console.log(`Player ${socket.id} health changed to ${healthData.health}`);
+  });
+  
+  // Handle player death
+  socket.on('playerDeath', (deathData) => {
+    // Broadcast to other players
+    socket.broadcast.emit('playerDied', {
+      id: socket.id,
+      ...deathData
+    });
+    
+    console.log(`Player ${socket.id} died`);
+  });
+  
+  // Handle player respawn
+  socket.on('playerRespawn', (respawnData) => {
+    // Update player position and health in server state
+    if (players[socket.id]) {
+      if (respawnData.position) {
+        players[socket.id].position = respawnData.position;
+      }
+      if (respawnData.health) {
+        players[socket.id].health = respawnData.health;
+      }
+    }
+    
+    // Broadcast to other players
+    socket.broadcast.emit('playerRespawned', {
+      id: socket.id,
+      ...respawnData
+    });
+    
+    console.log(`Player ${socket.id} respawned at position ${JSON.stringify(respawnData.position)}`);
   });
   
   // Handle disconnection

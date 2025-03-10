@@ -160,8 +160,12 @@
         
         .health-fill {
             height: 100%;
-            background-color: #e74c3c;
+            background-color: #2ecc71; /* Start with green (full health) */
             width: 100%;
+            transition: width 0.3s ease-out, background-color 0.3s ease-out;
+            position: relative;
+            z-index: 5; /* Ensure health fill is above background */
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.5) inset;
         }
         
         .player-info {
@@ -175,6 +179,44 @@
             height: 20px;
             border-radius: 50%;
             margin-right: 10px;
+        }
+        
+        /* Combat styles */
+        .damage-text {
+            position: absolute;
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 2px 2px 2px rgba(0,0,0,0.5);
+            pointer-events: none;
+            z-index: 1000;
+            user-select: none;
+        }
+        
+        /* Cooldown styles */
+        .cooldown-container {
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+        }
+        
+        .cooldown-label {
+            margin-right: 10px;
+            font-size: 14px;
+        }
+        
+        .cooldown-bar {
+            width: 100px;
+            height: 15px;
+            background-color: #333;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        .cooldown-fill {
+            height: 100%;
+            background-color: #3498db;
+            width: 0%;
+            transition: width 0.1s linear;
         }
     </style>
 </head>
@@ -229,12 +271,71 @@
             <div class="health-fill" id="health-fill"></div>
         </div>
         <div id="player-stats">Health: 100</div>
+        <!-- Attack cooldown indicator -->
+        <div class="cooldown-container">
+            <div class="cooldown-label">Attack:</div>
+            <div class="cooldown-bar">
+                <div class="cooldown-fill" id="cooldown-fill"></div>
+            </div>
+        </div>
     </div>
     
     <!-- UI Overlay for HTML/CSS UI elements -->
     <div class="ui-overlay" id="ui-overlay"></div>
     
     <!-- Vite entry point -->
+    <!-- Direct health bar update handling to bypass any potential issues -->
+    <script>
+      // Create a global health update function that can be called from anywhere
+      window.updateHealthUI = function(health, maxHealth) {
+        const healthFill = document.getElementById('health-fill');
+        const playerStats = document.getElementById('player-stats');
+        const gameUI = document.getElementById('game-ui');
+        
+        // Make sure UI is visible
+        if (gameUI && !gameUI.classList.contains('visible')) {
+          gameUI.classList.add('visible');
+        }
+        
+        if (healthFill) {
+          // Calculate percentage
+          const percentage = Math.max(0, Math.min(100, (health / maxHealth) * 100));
+          
+          // Force immediate update
+          healthFill.style.transition = 'none';
+          healthFill.style.width = percentage + '%';
+          
+          // Set color based on health percentage
+          if (percentage > 60) {
+            healthFill.style.backgroundColor = '#2ecc71'; // Green
+          } else if (percentage > 30) {
+            healthFill.style.backgroundColor = '#f39c12'; // Orange
+          } else {
+            healthFill.style.backgroundColor = '#e74c3c'; // Red
+          }
+          
+          // Force browser reflow
+          healthFill.offsetHeight;
+          
+          // Re-enable transition after a small delay
+          setTimeout(() => {
+            healthFill.style.transition = 'width 0.3s ease-out, background-color 0.3s ease-out';
+          }, 50);
+        }
+        
+        if (playerStats) {
+          playerStats.textContent = `Health: ${Math.round(health)}/${maxHealth}`;
+        }
+      };
+      
+      // Listen for Socket.io messages directly to update health
+      document.addEventListener('socket-health-update', (event) => {
+        if (event.detail) {
+          window.updateHealthUI(event.detail.health, event.detail.maxHealth);
+        }
+      });
+    </script>
+    
     <script type="module" src="/src/main.js"></script>
 </body>
 </html>

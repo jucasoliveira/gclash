@@ -119,6 +119,132 @@ class NetworkManager {
     this.socket.on('playerLeft', (data) => {
       eventBus.emit('network.playerLeft', data);
     });
+    
+    this.socket.on('playerAttacked', (attackData) => {
+      eventBus.emit('network.playerAttacked', attackData);
+      
+      // Log all attack events clearly
+      console.log(`NETWORK: Attack event received - ${attackData.id} attacked ${attackData.targetId} for ${attackData.damage} damage`);
+    });
+    
+    this.socket.on('playerHealthChanged', (healthData) => {
+      console.log(`NETWORK: Health change event received - Player ${healthData.id} health now ${healthData.health}/${healthData.maxHealth}`);
+      
+      // Check if this is for our player ID
+      if (this.socket && this.socket.id === healthData.id) {
+        console.log(`NETWORK: This health change is for the local player!`);
+        
+        // CRITICAL: Direct DOM update for player health bar
+        const healthFill = document.getElementById('health-fill');
+        const playerStats = document.getElementById('player-stats');
+        
+        if (healthFill) {
+          // Calculate percentage
+          const percentage = Math.max(0, Math.min(100, (healthData.health / healthData.maxHealth) * 100));
+          
+          // Force immediate update without transition
+          healthFill.style.transition = 'none';
+          healthFill.style.width = `${percentage}%`;
+          healthFill.offsetHeight; // Force reflow
+          
+          // Set color based on health percentage
+          if (percentage > 60) {
+            healthFill.style.backgroundColor = '#2ecc71'; // Green for high health
+          } else if (percentage > 30) {
+            healthFill.style.backgroundColor = '#f39c12'; // Orange for medium health
+          } else {
+            healthFill.style.backgroundColor = '#e74c3c'; // Red for low health
+          }
+          
+          console.log(`DIRECT NETWORK UI UPDATE: Set health bar to ${percentage}%`);
+          
+          // Re-enable transition after a small delay
+          setTimeout(() => {
+            healthFill.style.transition = 'width 0.3s ease-out, background-color 0.3s ease-out';
+          }, 50);
+        }
+        
+        if (playerStats) {
+          playerStats.textContent = `Health: ${Math.round(healthData.health)}/${healthData.maxHealth}`;
+        }
+        
+        // Make game UI visible if it's not
+        const gameUI = document.getElementById('game-ui');
+        if (gameUI && !gameUI.classList.contains('visible')) {
+          gameUI.classList.add('visible');
+        }
+        
+        // CRITICAL: Use global DOM update function if available
+        if (window.updateHealthUI) {
+          console.log('NETWORK: Calling global updateHealthUI function');
+          window.updateHealthUI(healthData.health, healthData.maxHealth);
+        }
+        
+        // Also dispatch a custom DOM event
+        const healthUpdateEvent = new CustomEvent('socket-health-update', {
+          detail: {
+            id: healthData.id,
+            health: healthData.health,
+            maxHealth: healthData.maxHealth
+          }
+        });
+        document.dispatchEvent(healthUpdateEvent);
+      }
+      
+      // Emit the event for the EntityManager to handle
+      eventBus.emit('network.playerHealthChanged', healthData);
+    });
+    
+    this.socket.on('playerDied', (deathData) => {
+      console.log(`NETWORK: Death event received - Player ${deathData.id} died`);
+      
+      // Check if this is for our player ID
+      if (this.socket && this.socket.id === deathData.id) {
+        console.log(`NETWORK: Local player death event received!`);
+        
+        // CRITICAL: Direct DOM update for health to zero
+        const healthFill = document.getElementById('health-fill');
+        const playerStats = document.getElementById('player-stats');
+        
+        if (healthFill) {
+          // Force immediate update to zero health
+          healthFill.style.transition = 'none';
+          healthFill.style.width = '0%';
+          healthFill.style.backgroundColor = '#e74c3c'; // Red
+          healthFill.offsetHeight; // Force reflow
+        }
+        
+        if (playerStats) {
+          playerStats.textContent = `Health: 0/100`;
+        }
+        
+        // Find player object through EntityManager and hide its mesh
+        eventBus.emit('entityManager.getPlayerByID', {
+          id: deathData.id,
+          callback: (player) => {
+            if (player && player.mesh) {
+              console.log('CRITICAL: Hiding player mesh directly on death event');
+              player.mesh.visible = false;
+              
+              // Force death effect
+              if (typeof player._showDeathEffect === 'function') {
+                player._showDeathEffect();
+              }
+              
+              // Set health to zero
+              player.health = 0;
+            }
+          }
+        });
+      }
+      
+      eventBus.emit('network.playerDied', deathData);
+    });
+    
+    this.socket.on('playerRespawned', (respawnData) => {
+      console.log(`NETWORK: Respawn event received - Player ${respawnData.id} respawned`);
+      eventBus.emit('network.playerRespawned', respawnData);
+    });
   }
 
   /**
@@ -215,6 +341,42 @@ class NetworkManager {
    */
   sendPlayerMove(position) {
     return this.emit('playerMove', { position });
+  }
+  
+  /**
+   * Send player attack
+   * @param {Object} attackData - Attack data
+   * @returns {boolean} - Whether the event was sent
+   */
+  sendPlayerAttack(attackData) {
+    return this.emit('playerAttack', attackData);
+  }
+  
+  /**
+   * Send player health change
+   * @param {Object} healthData - Health data
+   * @returns {boolean} - Whether the event was sent
+   */
+  sendPlayerHealthChange(healthData) {
+    return this.emit('playerHealthChange', healthData);
+  }
+  
+  /**
+   * Send player death
+   * @param {Object} deathData - Death data
+   * @returns {boolean} - Whether the event was sent
+   */
+  sendPlayerDeath(deathData) {
+    return this.emit('playerDeath', deathData);
+  }
+  
+  /**
+   * Send player respawn
+   * @param {Object} respawnData - Respawn data with new position
+   * @returns {boolean} - Whether the event was sent
+   */
+  sendPlayerRespawn(respawnData) {
+    return this.emit('playerRespawn', respawnData);
   }
 
   /**

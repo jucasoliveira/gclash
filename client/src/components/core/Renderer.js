@@ -13,6 +13,7 @@ class Renderer {
     this.animationId = null;
     this.isInitialized = false;
     this.objects = new Map();
+    this.lastTime = null; // For delta time calculation
     
     // Binding methods
     this.render = this.render.bind(this);
@@ -48,6 +49,9 @@ class Renderer {
     
     // Set up basic lighting
     this.setupLighting();
+    
+    // Set up event listeners
+    eventBus.on('renderer.addObject', this._handleAddObject.bind(this));
     
     // Set initialization flag
     this.isInitialized = true;
@@ -128,8 +132,10 @@ class Renderer {
    * Add an object to the scene
    * @param {string} id - Unique ID for the object
    * @param {THREE.Object3D} object - Any THREE.js object
+   * @param {boolean} temporary - Whether the object is temporary
+   * @param {number} duration - Duration in seconds to keep temporary object
    */
-  addObject(id, object) {
+  addObject(id, object, temporary = false, duration = 0) {
     if (this.objects.has(id)) {
       console.warn(`Object with ID ${id} already exists. Replacing.`);
       this.removeObject(id);
@@ -139,6 +145,13 @@ class Renderer {
     this.objects.set(id, object);
     
     eventBus.emit('renderer.objectAdded', { id, object });
+    
+    // Handle temporary objects
+    if (temporary && duration > 0) {
+      setTimeout(() => {
+        this.removeObject(id);
+      }, duration * 1000);
+    }
   }
 
   /**
@@ -175,6 +188,9 @@ class Renderer {
       return;
     }
     
+    // Make camera globally available for raycasting
+    window.currentCamera = this.camera;
+    
     if (this.animationId === null) {
       this.render();
     }
@@ -187,17 +203,23 @@ class Renderer {
     if (this.animationId !== null) {
       cancelAnimationFrame(this.animationId);
       this.animationId = null;
+      this.lastTime = null; // Reset time tracking
     }
   }
 
   /**
    * Render loop
    */
-  render() {
+  render(timestamp) {
     this.animationId = requestAnimationFrame(this.render);
     
+    // Calculate delta time (time since last frame in seconds)
+    const now = timestamp || performance.now();
+    const deltaTime = this.lastTime ? (now - this.lastTime) / 1000 : 0;
+    this.lastTime = now;
+    
     // Emit before render event for other systems to update
-    eventBus.emit('renderer.beforeRender', { deltaTime: 0, renderer: this });
+    eventBus.emit('renderer.beforeRender', { deltaTime, renderer: this });
     
     // Render the scene
     this.renderer.render(this.scene, this.camera);
@@ -234,6 +256,16 @@ class Renderer {
   }
 
   /**
+   * Handle add object event
+   * @param {Object} data - Event data
+   * @private
+   */
+  _handleAddObject(data) {
+    const { id, object, temporary, duration } = data;
+    this.addObject(id, object, temporary, duration);
+  }
+
+  /**
    * Clean up resources
    */
   dispose() {
@@ -241,6 +273,9 @@ class Renderer {
     
     // Remove resize listener
     window.removeEventListener('resize', this.onResize);
+    
+    // Remove event listeners
+    eventBus.off('renderer.addObject');
     
     // Clear scene
     this.objects.clear();
