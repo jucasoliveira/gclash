@@ -288,8 +288,8 @@ class Player extends Entity {
       this.attackCooldown = Math.max(0, this.attackCooldown - deltaTime);
       
       // Log cooldown for debugging
-      if (deltaTime > 0) {
-        console.debug(`Cooldown decreasing: ${this.attackCooldown.toFixed(2)} seconds left (delta: ${deltaTime.toFixed(3)}s)`);
+      if (deltaTime > 0 && this.attackCooldown % 1 < deltaTime) {
+        console.debug(`Cooldown: ${this.attackCooldown.toFixed(2)}s left`);
       }
       
       // Update cooldown UI
@@ -418,45 +418,72 @@ class Player extends Entity {
     
     console.log(`Attack executed: ${this.primaryAttack.name}, cooldown: ${this.attackCooldown}s, mana used: ${manaCost}`);
     
-    // Create a raycaster for target detection
-    const raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera(data.ndc, window.currentCamera);
-    
-    // Get entities that can be targeted (other players)
-    const targetableMeshes = [];
-    
-    // Find all possible targets
-    eventBus.emit('combat.getTargets', { 
-      callback: (targets) => {
-        targetableMeshes.push(...targets);
-      }
-    });
-    
-    // Check for intersections
-    const intersects = raycaster.intersectObjects(targetableMeshes);
-    
-    if (intersects.length > 0) {
-      // Get the entity ID from the mesh
-      const targetEntityId = intersects[0].object.userData.entityId;
+    try {
+      // Create a raycaster for target detection
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(data.ndc, window.currentCamera);
       
-      if (targetEntityId) {
-        // Check if target is in range
-        const target = this._getEntityById(targetEntityId);
-        
-        if (target) {
-          const distance = this.position.distanceTo(target.position);
-          
-          if (distance <= this.primaryAttack.range) {
-            // Deal damage
-            this._executeAttack(targetEntityId, this.primaryAttack.damage);
-          } else {
-            console.log('Target out of range');
-          }
+      // Get entities that can be targeted (other players)
+      const targetableMeshes = [];
+      let targetEntityId = null;
+      
+      // Find all possible targets
+      eventBus.emit('combat.getTargets', { 
+        callback: (targets) => {
+          targetableMeshes.push(...targets);
         }
+      });
+      
+      console.log(`[ATTACK] Found ${targetableMeshes.length} targetable meshes`);
+      
+      // Check for intersections
+      const intersects = raycaster.intersectObjects(targetableMeshes);
+      
+      if (intersects.length > 0) {
+        // Get the entity ID from the mesh
+        targetEntityId = intersects[0].object.userData.entityId;
+        console.log(`[ATTACK] Raycast hit on entity: ${targetEntityId}`);
+        
+        if (targetEntityId) {
+          // Check if target is in range
+          const target = this._getEntityById(targetEntityId);
+          
+          if (target) {
+            const distance = this.position.distanceTo(target.position);
+            
+            console.log(`[ATTACK] Target found: ${targetEntityId} at distance ${distance.toFixed(2)}, attack range: ${this.primaryAttack.range}`);
+            
+            // Client-side range check (this will be validated again on server)
+            if (distance <= this.primaryAttack.range) {
+              // Deal damage - note that actual damage application depends on server validation
+              this._executeAttack(targetEntityId, this.primaryAttack.damage, distance);
+            } else {
+              console.log(`[ATTACK] Target likely out of range (${distance.toFixed(2)} > ${this.primaryAttack.range}), but sending attack for server validation`);
+              
+              // Still send the attack for server-side validation (server makes final decision)
+              // The server might have different position data and could still accept the attack
+              this._executeAttack(targetEntityId, this.primaryAttack.damage, distance);
+              
+              // Show a "likely miss" indicator but don't confirm until server responds
+              this._showRangeWarningIndicator(distance, this.primaryAttack.range);
+            }
+          } else {
+            console.log(`[ATTACK] Target entity ${targetEntityId} not found in entity manager`);
+          }
+        } else {
+          console.log(`[ATTACK] Hit object has no entityId in userData`);
+        }
+      } else {
+        console.log('[ATTACK] No target found under cursor, looking for closest visible target');
+        
+        // If no direct hit, try finding the nearest visible target as a fallback
+        this._findAndAttackNearestTarget();
       }
+    } catch (error) {
+      console.error('[ATTACK ERROR] Error processing attack:', error);
     }
     
-    // Show attack animation/effect
+    // Show attack animation/effect regardless of hit (visual feedback for player)
     this._showAttackEffect();
     
     // Reset attack state after animation completes
@@ -467,33 +494,105 @@ class Player extends Entity {
   }
   
   /**
+   * Find and attack the nearest visible target
+   * @private
+   */
+  _findAndAttackNearestTarget() {
+    // Get all other players from entity manager
+    const otherPlayers = [];
+    
+    eventBus.emit('entityManager.getEntitiesByType', {
+      type: 'otherPlayer',
+      callback: (entities) => {
+        otherPlayers.push(...entities);
+      }
+    });
+    
+    console.log(`[ATTACK] Looking for targets among ${otherPlayers.length} other players`);
+    
+    if (otherPlayers.length === 0) {
+      console.log('[ATTACK] No other players found');
+      return;
+    }
+    
+    // Find closest player in attack range
+    let closestTarget = null;
+    let closestDistance = Infinity;
+    
+    for (const player of otherPlayers) {
+      const distance = this.position.distanceTo(player.position);
+      
+      // Check if in range and closer than current closest
+      if (distance <= this.primaryAttack.range && distance < closestDistance) {
+        closestTarget = player;
+        closestDistance = distance;
+      }
+    }
+    
+    if (closestTarget) {
+      console.log(`[ATTACK] Found closest target: ${closestTarget.id} at distance ${closestDistance.toFixed(2)}`);
+      this._executeAttack(closestTarget.id, this.primaryAttack.damage, closestDistance);
+    } else {
+      console.log(`[ATTACK] No targets within range (${this.primaryAttack.range})`);
+    }
+  }
+  
+  /**
    * Execute attack on a target
    * @param {string} targetId - Target entity ID
    * @param {number} damage - Damage amount
+   * @param {number} distance - Distance to target (if known)
    * @private
    */
-  _executeAttack(targetId, damage) {
-    // Emit damage event
-    eventBus.emit('combat.damage', {
+  _executeAttack(targetId, damage, distance = null) {
+    // Generate a local attack ID for tracking
+    const attackId = Date.now().toString() + '-' + Math.floor(Math.random() * 1000);
+    
+    console.log(`[ATTACK] Executing attack on target ${targetId} for ${damage} damage (ID: ${attackId})`);
+    
+    // Emit attack request event - for visualization only, damage will be confirmed by server
+    eventBus.emit('combat.attackRequested', {
       attackerId: this.id,
       targetId: targetId,
       damage: damage,
-      attackType: this.primaryAttack.name
+      attackType: this.primaryAttack.name,
+      attackId: attackId,
+      distance: distance
     });
     
-    // Send attack to server
-    webSocketManager.sendAttack({
-      targetId,
-      damage,
-      attackType: this.primaryAttack.name
-    });
+    // Get position for debugging
+    const myPos = {
+      x: this.position.x,
+      y: this.position.y,
+      z: this.position.z
+    };
     
-    // Warrior gains mana when landing hits
-    if (this.classType === 'WARRIOR') {
-      const manaGain = this.manaUsage.WARRIOR.regenBonus.onHit;
-      this.mana = Math.min(this.maxMana, this.mana + manaGain);
-      console.log(`Warrior gained ${manaGain} mana from landing a hit. Current mana: ${this.mana.toFixed(1)}`);
-      this._emitManaChange();
+    try {
+      // Verify that WebSocketManager is initialized
+      if (!webSocketManager) {
+        console.error("[ATTACK ERROR] WebSocketManager not available");
+        return;
+      }
+      
+      console.log(`[ATTACK] Sending attack to server with ID ${attackId}, damage: ${damage}, distance: ${distance || 'unknown'}`);
+      console.log(`[ATTACK] My position: (${myPos.x.toFixed(2)}, ${myPos.y.toFixed(2)}, ${myPos.z.toFixed(2)})`);
+      
+      // Send attack to server with position data - server will validate and apply damage
+      webSocketManager.sendAttack({
+        targetId,
+        damage,
+        attackType: this.primaryAttack.name,
+        attackId: attackId,
+        distance: distance,
+        debug: {
+          myPosition: myPos,
+          timestamp: Date.now()
+        }
+      });
+      
+      console.log(`[ATTACK] Attack sent to server - ID: ${attackId}`);
+    } catch (error) {
+      console.error("[ATTACK ERROR] Failed to send attack to server:", error);
     }
   }
   
@@ -579,14 +678,39 @@ class Player extends Entity {
    * @private
    */
   _getEntityById(id) {
+    if (!id) {
+      console.warn('[ENTITY] Cannot get entity: ID is null or undefined');
+      return null;
+    }
+    
     let entity = null;
     
-    eventBus.emit('entityManager.getEntity', { 
-      id,
-      callback: (result) => {
-        entity = result;
+    try {
+      // Try to get entity from EntityManager
+      eventBus.emit('entityManager.getEntity', { 
+        id,
+        callback: (result) => {
+          entity = result;
+        }
+      });
+      
+      if (!entity) {
+        console.warn(`[ENTITY] Entity with ID ${id} not found in EntityManager`);
+        
+        // As a fallback, try to get entity directly from window.game.entityManager
+        if (window.game && window.game.entityManager) {
+          const fallbackEntity = window.game.entityManager.getEntity(id);
+          if (fallbackEntity) {
+            console.log(`[ENTITY] Found entity ${id} using fallback method`);
+            entity = fallbackEntity;
+          }
+        }
+      } else {
+        console.log(`[ENTITY] Successfully retrieved entity ${id}`);
       }
-    });
+    } catch (error) {
+      console.error(`[ENTITY] Error getting entity ${id}:`, error);
+    }
     
     return entity;
   }
@@ -601,12 +725,12 @@ class Player extends Entity {
     const oldHealth = this.health;
     this.health = Math.max(0, this.health - amount);
     
-    console.log(`PLAYER TAKING DAMAGE: ${oldHealth} -> ${this.health} (${amount} damage)`);
+    console.log(`[HEALTH] ${this.id}: ${oldHealth} -> ${this.health} (${amount} damage)${fromNetwork ? ' [SERVER CONFIRMED]' : ''}`);
     
     // DIRECTLY UPDATE THE GAME UI
     // Find the Game instance through the global window object
     if (window.game && typeof window.game.updateHealthUI === 'function') {
-      console.log(`CRITICAL: Directly calling game.updateHealthUI from Player.takeDamage`);
+      console.log(`[CRITICAL] Directly calling game.updateHealthUI from Player.takeDamage: ${this.health}/${this.stats.health}`);
       window.game.updateHealthUI(this.health, this.stats.health);
     }
     
@@ -646,23 +770,23 @@ class Player extends Entity {
     const playerStats = document.getElementById('player-stats');
     
     if (healthFill) {
-      const percentage = Math.max(0, Math.min(100, (this.health / this.stats.health) * 100));
+      const healthPercent = (this.health / this.stats.health) * 100;
       
       // Force immediate update
       healthFill.style.transition = 'none';
-      healthFill.style.width = `${percentage}%`;
+      healthFill.style.width = `${healthPercent}%`;
       healthFill.offsetHeight; // Force reflow
       
-      // Set color
-      if (percentage > 60) {
+      // Update color based on health percentage
+      if (healthPercent > 60) {
         healthFill.style.backgroundColor = '#2ecc71'; // Green
-      } else if (percentage > 30) {
+      } else if (healthPercent > 30) {
         healthFill.style.backgroundColor = '#f39c12'; // Orange
       } else {
         healthFill.style.backgroundColor = '#e74c3c'; // Red
       }
       
-      console.log(`CRITICAL: Direct DOM health bar update to ${percentage}%`);
+      console.log(`[CRITICAL] Direct DOM health bar update to ${healthPercent}%`);
       
       // Re-enable transition
       setTimeout(() => {
@@ -683,7 +807,7 @@ class Player extends Entity {
     
     // Check if player died
     if (this.health <= 0) {
-      console.log(`PLAYER DIED FROM DAMAGE: Health reached ${this.health}`);
+      console.log(`[DEATH] ${this.id} died from ${amount} damage`);
       
       // Emit death event
       eventBus.emit(`entity.${this.id}.died`, { entityId: this.id });
@@ -702,131 +826,14 @@ class Player extends Entity {
       
       // Show death effect
       this._showDeathEffect();
+      
+      // If this is the local player, show death screen
+      if (this.id === webSocketManager.playerId && window.showDeathScreen) {
+        window.showDeathScreen('Unknown'); // We don't know the attacker here
+      }
     }
     
     return this.health;
-  }
-  
-  /**
-   * Update the player's health UI
-   * @private
-   */
-  _updateHealthUI() {
-    // Make sure the game UI is visible if it's not already
-    const gameUI = document.getElementById('game-ui');
-    if (gameUI && !gameUI.classList.contains('visible')) {
-      gameUI.classList.add('visible');
-    }
-    
-    const healthFill = document.getElementById('health-fill');
-    const playerStats = document.getElementById('player-stats');
-    
-    // Ensure health is clamped to valid range (0 to max)
-    const validHealth = Math.max(0, Math.min(this.stats.health, this.health));
-    
-    console.log(`UPDATING PLAYER UI: Health = ${validHealth}/${this.stats.health}`);
-    
-    // Update the health bar fill
-    if (healthFill) {
-      const percentage = Math.max(0, Math.min(100, (validHealth / this.stats.health) * 100));
-      
-      // Force immediate style update without animation
-      healthFill.style.transition = 'none'; // Turn off transition temporarily
-      
-      // Update DOM directly and force a reflow
-      healthFill.style.width = `${percentage}%`;
-      healthFill.offsetHeight; // Force reflow
-      
-      // Set color based on health percentage
-      if (percentage > 60) {
-        healthFill.style.backgroundColor = '#2ecc71'; // Green for high health
-      } else if (percentage > 30) {
-        healthFill.style.backgroundColor = '#f39c12'; // Orange for medium health
-      } else {
-        healthFill.style.backgroundColor = '#e74c3c'; // Red for low health
-      }
-      
-      // Restore transition after a brief delay
-      setTimeout(() => {
-        healthFill.style.transition = 'width 0.2s ease-out';
-      }, 50);
-      
-      console.log(`Health bar updated: ${percentage}% width, health: ${validHealth}/${this.stats.health}`);
-    } else {
-      console.error('CRITICAL ERROR: Health fill element not found in the DOM!');
-      // Try to recreate it
-      const healthBar = document.querySelector('.health-bar');
-      if (healthBar) {
-        console.log('Found health bar container, recreating health fill');
-        const newHealthFill = document.createElement('div');
-        newHealthFill.id = 'health-fill';
-        newHealthFill.className = 'health-fill';
-        healthBar.innerHTML = '';
-        healthBar.appendChild(newHealthFill);
-      }
-    }
-    
-    // Update the text display
-    if (playerStats) {
-      playerStats.textContent = `Health: ${Math.round(validHealth)}/${this.stats.health}`;
-      console.log(`Player stats text updated to: ${playerStats.textContent}`);
-    } else {
-      console.error('CRITICAL ERROR: Player stats element not found in the DOM!');
-    }
-    
-    // Additional direct update to DOM for reliability
-    document.querySelectorAll('.health-fill').forEach(fill => {
-      const percentage = Math.max(0, Math.min(100, (validHealth / this.stats.health) * 100));
-      fill.style.width = `${percentage}%`;
-    });
-  }
-  
-  /**
-   * Play damage effect when player takes damage
-   * @private
-   */
-  _playDamageEffect() {
-    // Flash the screen red
-    const flashElement = document.createElement('div');
-    flashElement.style.position = 'fixed';
-    flashElement.style.top = '0';
-    flashElement.style.left = '0';
-    flashElement.style.width = '100%';
-    flashElement.style.height = '100%';
-    flashElement.style.backgroundColor = 'rgba(255, 0, 0, 0.3)';
-    flashElement.style.pointerEvents = 'none';
-    flashElement.style.zIndex = '1000';
-    flashElement.style.transition = 'opacity 0.3s ease-out';
-    
-    document.body.appendChild(flashElement);
-    
-    // Fade out and remove
-    setTimeout(() => {
-      flashElement.style.opacity = '0';
-      setTimeout(() => {
-        if (document.body.contains(flashElement)) {
-          document.body.removeChild(flashElement);
-        }
-      }, 300);
-    }, 50);
-    
-    // Shake the camera slightly
-    if (window.currentCamera) {
-      const originalPosition = window.currentCamera.position.clone();
-      const shakeAmount = 0.1;
-      
-      // Small random offset
-      window.currentCamera.position.x += (Math.random() - 0.5) * shakeAmount;
-      window.currentCamera.position.y += (Math.random() - 0.5) * shakeAmount;
-      window.currentCamera.position.z += (Math.random() - 0.5) * shakeAmount;
-      
-      // Reset camera position after a short delay
-      setTimeout(() => {
-        if (window.currentCamera) {
-          window.currentCamera.position.copy(originalPosition);
-        }
-      }, 100);
-    }
   }
   
   /**
@@ -1192,6 +1199,171 @@ class Player extends Entity {
     
     // Call base entity destroy
     super.destroy();
+  }
+
+  /**
+   * Show a visual indicator for range warnings
+   * @param {number} distance - Current distance to target
+   * @param {number} maxRange - Maximum attack range
+   * @private
+   */
+  _showRangeWarningIndicator(distance, maxRange) {
+    // Create a text sprite for the warning
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    canvas.width = 256;
+    canvas.height = 64;
+    
+    // Set up text style
+    context.font = 'bold 24px Arial';
+    context.fillStyle = '#ff3300';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    
+    // Draw warning text
+    context.fillText(`Range: ${distance.toFixed(1)} > ${maxRange}`, 128, 32);
+    
+    // Create texture and sprite
+    const texture = new THREE.CanvasTexture(canvas);
+    const material = new THREE.SpriteMaterial({ 
+      map: texture,
+      transparent: true
+    });
+    const sprite = new THREE.Sprite(material);
+    
+    // Position above player
+    sprite.position.copy(this.position.clone().add(new THREE.Vector3(0, 2, 0)));
+    sprite.scale.set(2, 0.5, 1);
+    
+    // Add to scene temporarily
+    eventBus.emit('renderer.addObject', {
+      id: `range-warning-${Date.now()}`,
+      object: sprite,
+      temporary: true,
+      duration: 1.5
+    });
+  }
+
+  /**
+   * Update the player's health UI
+   * @private
+   */
+  _updateHealthUI() {
+    // Make sure the game UI is visible if it's not already
+    const gameUI = document.getElementById('game-ui');
+    if (gameUI && !gameUI.classList.contains('visible')) {
+      gameUI.classList.add('visible');
+    }
+    
+    const healthFill = document.getElementById('health-fill');
+    const playerStats = document.getElementById('player-stats');
+    
+    // Ensure health is clamped to valid range (0 to max)
+    const validHealth = Math.max(0, Math.min(this.stats.health, this.health));
+    
+    console.log(`UPDATING PLAYER UI: Health = ${validHealth}/${this.stats.health}`);
+    
+    // Update the health bar fill
+    if (healthFill) {
+      const percentage = Math.max(0, Math.min(100, (validHealth / this.stats.health) * 100));
+      
+      // Force immediate style update without animation
+      healthFill.style.transition = 'none'; // Turn off transition temporarily
+      
+      // Update DOM directly and force a reflow
+      healthFill.style.width = `${percentage}%`;
+      healthFill.offsetHeight; // Force reflow
+      
+      // Set color based on health percentage
+      if (percentage > 60) {
+        healthFill.style.backgroundColor = '#2ecc71'; // Green for high health
+      } else if (percentage > 30) {
+        healthFill.style.backgroundColor = '#f39c12'; // Orange for medium health
+      } else {
+        healthFill.style.backgroundColor = '#e74c3c'; // Red for low health
+      }
+      
+      // Restore transition after a brief delay
+      setTimeout(() => {
+        healthFill.style.transition = 'width 0.2s ease-out';
+      }, 50);
+      
+      console.log(`Health bar updated: ${percentage}% width, health: ${validHealth}/${this.stats.health}`);
+    } else {
+      console.error('CRITICAL ERROR: Health fill element not found in the DOM!');
+      // Try to recreate it
+      const healthBar = document.querySelector('.health-bar');
+      if (healthBar) {
+        console.log('Found health bar container, recreating health fill');
+        const newHealthFill = document.createElement('div');
+        newHealthFill.id = 'health-fill';
+        newHealthFill.className = 'health-fill';
+        healthBar.innerHTML = '';
+        healthBar.appendChild(newHealthFill);
+      }
+    }
+    
+    // Update the text display
+    if (playerStats) {
+      playerStats.textContent = `Health: ${Math.round(validHealth)}/${this.stats.health}`;
+      console.log(`Player stats text updated to: ${playerStats.textContent}`);
+    } else {
+      console.error('CRITICAL ERROR: Player stats element not found in the DOM!');
+    }
+    
+    // Additional direct update to DOM for reliability
+    document.querySelectorAll('.health-fill').forEach(fill => {
+      const percentage = Math.max(0, Math.min(100, (validHealth / this.stats.health) * 100));
+      fill.style.width = `${percentage}%`;
+    });
+  }
+
+  /**
+   * Play damage effect when player takes damage
+   * @private
+   */
+  _playDamageEffect() {
+    // Flash the screen red
+    const flashElement = document.createElement('div');
+    flashElement.style.position = 'fixed';
+    flashElement.style.top = '0';
+    flashElement.style.left = '0';
+    flashElement.style.width = '100%';
+    flashElement.style.height = '100%';
+    flashElement.style.backgroundColor = 'rgba(255, 0, 0, 0.3)';
+    flashElement.style.pointerEvents = 'none';
+    flashElement.style.zIndex = '1000';
+    flashElement.style.transition = 'opacity 0.3s ease-out';
+    
+    document.body.appendChild(flashElement);
+    
+    // Fade out and remove
+    setTimeout(() => {
+      flashElement.style.opacity = '0';
+      setTimeout(() => {
+        if (document.body.contains(flashElement)) {
+          document.body.removeChild(flashElement);
+        }
+      }, 300);
+    }, 50);
+    
+    // Shake the camera slightly
+    if (window.currentCamera) {
+      const originalPosition = window.currentCamera.position.clone();
+      const shakeAmount = 0.1;
+      
+      // Small random offset
+      window.currentCamera.position.x += (Math.random() - 0.5) * shakeAmount;
+      window.currentCamera.position.y += (Math.random() - 0.5) * shakeAmount;
+      window.currentCamera.position.z += (Math.random() - 0.5) * shakeAmount;
+      
+      // Reset camera position after a short delay
+      setTimeout(() => {
+        if (window.currentCamera) {
+          window.currentCamera.position.copy(originalPosition);
+        }
+      }, 100);
+    }
   }
 }
 

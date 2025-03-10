@@ -604,3 +604,88 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
   - Structured documentation in markdown
   - Clear component responsibilities and interfaces
   - Extensive console logging for debugging
+
+### Step 15: Combat System Reliability Improvements
+
+- **Fixed Entity Lookup and Damage Registration**:
+
+  - Enhanced the EntityManager's entity lookup system with multiple fallback mechanisms
+  - Added proper handling for the `entityManager.getEntity` and `entityManager.getEntitiesByType` events
+  - Implemented robust error handling in the Player's `_getEntityById` method
+  - Added direct entity lookup when standard methods fail to find targets
+  - Created a global reference to EntityManager in Game class for easier access
+
+- **Improved Attack Processing**:
+
+  - Refactored attack handling into a dedicated `_processAttackWithTarget` method
+  - Added fallback damage application for entities without a takeDamage method
+  - Enhanced the OtherPlayer's takeDamage method with better validation and logging
+  - Fixed health bar color updates with forced material updates
+  - Added comprehensive logging throughout the attack flow
+
+- **Enhanced Network Communication**:
+
+  - Improved WebSocketManager's sendAttack method with better validation
+  - Added proper handling for the new playerHealth message type
+  - Enhanced server-side attack validation and processing
+  - Implemented detailed logging for attack events on both client and server
+  - Added ping/pong support for connection testing
+
+- **Added Visual Feedback**:
+
+  - Created a "DESTROYED" text effect that appears when a player is defeated
+  - Enhanced death animation with particle effects and mesh hiding
+  - Improved health bar visualization with proper color transitions
+  - Added fallback UI for attack miss feedback
+  - Implemented comprehensive logging for visual effects
+
+- **Added Debugging Tools**:
+
+  - Enhanced the global debugNetwork function to test connectivity
+  - Added a testAttack function to find and attack the nearest player
+  - Improved the showAttackMissedFeedback function with fallback UI
+  - Added detailed logging throughout the combat flow
+  - Created direct DOM manipulation for critical UI updates
+
+- **Technical Implementation Details**:
+
+  - Used event-driven architecture for loose coupling between components
+  - Implemented multiple redundant paths for critical updates
+  - Added fallback mechanisms at every step of the combat process
+  - Enhanced error handling with try-catch blocks and detailed logging
+  - Created placeholder entities when originals can't be found
+
+- **Benefits of the Improvements**:
+
+  - More reliable damage registration across all clients
+  - Consistent visual feedback for attacks, hits, and misses
+  - Better debugging capabilities for network issues
+  - Enhanced player experience with clear feedback
+  - Improved code maintainability with better error handling
+  - More robust multiplayer synchronization
+
+- **Specific Issues Fixed**:
+
+  - **Health Bar Not Updating**: Fixed health bars not depleting when opponents take damage by ensuring proper material updates and adding multiple fallback mechanisms
+  - **Death Animation Not Triggering**: Added reliable death detection and enhanced the death effect with a "DESTROYED" text overlay and particle effects
+  - **Damage Not Registering**: Implemented multiple redundant paths for damage application and improved entity lookup to ensure attacks always find their targets
+  - **Network Synchronization Issues**: Enhanced WebSocket message handling with better validation and added detailed logging for debugging
+  - **Missing Visual Feedback**: Added comprehensive visual effects for all combat actions including hits, misses, and deaths
+
+- **Testing the Improvements**:
+
+  - **Combat Testing**: Use the global `testAttack()` function in the browser console to automatically find and attack the nearest player
+  - **Network Debugging**: Use the global `debugNetwork()` function to check connection status and test server connectivity
+  - **Visual Verification**: Confirm that health bars properly deplete, death animations trigger with "DESTROYED" text, and attack effects are visible
+  - **Server Validation**: Check server logs to verify proper attack processing, range validation, and damage calculation
+  - **Edge Case Handling**: Test with multiple players to ensure consistent behavior across different scenarios
+
+- **Future Combat System Improvements**:
+  - **Client-Side Prediction**: Implement predictive animations to reduce perceived latency
+  - **Combat Metrics**: Add damage meters, hit rate statistics, and combat logs
+  - **Enhanced Effects**: Create more sophisticated visual and audio effects for different attack types
+  - **Combat AI**: Develop computer-controlled opponents for practice and single-player modes
+  - **Combat Balancing**: Fine-tune damage values, cooldowns, and ranges based on player feedback
+  - **Combo System**: Implement attack combinations and special moves for advanced gameplay
+  - **Hitbox Refinement**: Create more precise collision detection for better hit registration
+  - **Network Optimization**: Reduce bandwidth usage with binary encoding and delta compression

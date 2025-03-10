@@ -152,12 +152,23 @@ class OtherPlayer extends Entity {
    * @returns {number} - Remaining health
    */
   takeDamage(amount) {
+    console.log(`[DAMAGE] OtherPlayer ${this.id} taking ${amount} damage. Current health: ${this.health}/${this.stats.health}`);
+    
+    // Ensure health is a valid number
+    if (typeof this.health !== 'number' || isNaN(this.health)) {
+      console.warn(`[DAMAGE] Invalid health value for ${this.id}: ${this.health}, resetting to max health`);
+      this.health = this.stats.health || 100;
+    }
+    
     // Calculate original health percentage (for animation)
     const originalHealthPercentage = this.health / this.stats.health;
     
     // Apply damage
+    const oldHealth = this.health;
     this.health = Math.max(0, this.health - amount);
     const newHealthPercentage = this.health / this.stats.health;
+    
+    console.log(`[DAMAGE] OtherPlayer ${this.id} health updated: ${oldHealth} -> ${this.health} (${amount} damage)`);
     
     // Create or update health indicator above player
     this._createHealthIndicator();
@@ -177,7 +188,14 @@ class OtherPlayer extends Entity {
     
     // Check if player died
     if (this.health <= 0) {
+      console.log(`[DEATH] OtherPlayer ${this.id} died from damage`);
       eventBus.emit(`entity.${this.id}.died`, { entityId: this.id });
+      
+      // Hide the mesh
+      if (this.mesh) {
+        this.mesh.visible = false;
+        console.log(`[DEATH] OtherPlayer ${this.id} mesh hidden`);
+      }
       
       // Show death effect
       this._showDeathEffect();
@@ -281,18 +299,35 @@ class OtherPlayer extends Entity {
    * @private
    */
   _updateHealthBarColor(percentage) {
-    if (!this.healthBar || !this.healthBar.children[1]) return;
+    if (!this.healthBar || !this.healthBar.children[1]) {
+      console.warn(`[HEALTH] Cannot update health bar color for ${this.id}: health bar not found`);
+      return;
+    }
     
     const material = this.healthBar.children[1].material;
-    if (!material) return;
+    if (!material) {
+      console.warn(`[HEALTH] Cannot update health bar color for ${this.id}: material not found`);
+      return;
+    }
+    
+    console.log(`[HEALTH] Updating health bar color for ${this.id} with percentage ${percentage.toFixed(2)}`);
+    
+    // Force material update
+    material.needsUpdate = true;
     
     if (percentage > 0.6) {
+      console.log(`[HEALTH] Setting health bar color to green for ${this.id}`);
       material.color.set(0x2ecc71); // Green for high health
     } else if (percentage > 0.3) {
+      console.log(`[HEALTH] Setting health bar color to orange for ${this.id}`);
       material.color.set(0xf39c12); // Orange for medium health
     } else {
+      console.log(`[HEALTH] Setting health bar color to red for ${this.id}`);
       material.color.set(0xe74c3c); // Red for low health
     }
+    
+    // Ensure the color change is applied
+    material.needsUpdate = true;
   }
   
   /**

@@ -43,7 +43,7 @@ class WebSocketManager {
         // Create WebSocket connection
         this.socket = new WebSocket(serverUrl);
         
-        // Set up event handlers
+        // Set up event handlers with proper binding
         this.socket.onopen = () => {
           console.log('Connected to server');
           this.connected = true;
@@ -53,16 +53,38 @@ class WebSocketManager {
         this.socket.onclose = () => {
           console.log('Disconnected from server');
           this.connected = false;
+          
+          // If we were previously connected, emit a disconnected event
+          if (this.connected) {
+            eventBus.emit('network.disconnected');
+          }
         };
         
         this.socket.onerror = (error) => {
           console.error('Server error:', error);
+          this.connected = false;
           reject(error);
         };
         
-        this.socket.onmessage = this.handleMessage;
+        // Make sure to bind the message handler to this instance
+        this.socket.onmessage = this.handleMessage.bind(this);
+        
+        // Set a connection timeout
+        const timeout = setTimeout(() => {
+          if (!this.connected) {
+            console.error('Connection timeout');
+            this.socket.close();
+            reject(new Error('Connection timeout'));
+          }
+        }, 5000);
+        
+        // Clear timeout when connected
+        this.socket.addEventListener('open', () => {
+          clearTimeout(timeout);
+        });
       } catch (error) {
         console.error('Error connecting to server:', error);
+        this.connected = false;
         reject(error);
       }
     });
@@ -81,6 +103,9 @@ class WebSocketManager {
         case 'id':
           this.playerId = message.id;
           console.log('Assigned ID:', this.playerId);
+          
+          // Emit ID assigned event
+          eventBus.emit('network.idAssigned', this.playerId);
           
           // If we have player data, send it now
           if (this.playerData) {
@@ -149,17 +174,28 @@ class WebSocketManager {
         case 'playerAttacked':
           console.log('Player attacked:', message);
           
-          // Notify about player attack
+          // Determine if attack should be processed
+          // If inRange is explicitly false, it's a miss
+          // Otherwise assume it's a hit (for backward compatibility and robustness)
+          const shouldProcessAttack = message.inRange !== false;
+          message.inRange = shouldProcessAttack; // Normalize for consistency
+          
+          console.log(`Processing attack: ${shouldProcessAttack ? 'YES' : 'NO'} - inRange: ${message.inRange}`);
+          
+          // Notify about player attack with all relevant details
           eventBus.emit('network.playerAttacked', {
             id: message.id,
             targetId: message.targetId,
             damage: message.damage,
-            attackType: message.attackType
+            attackType: message.attackType,
+            attackId: message.attackId || `legacy-${Date.now()}`,
+            inRange: message.inRange,
+            distance: message.distance || 0
           });
           
-          // If we are the target, handle damage
-          if (message.targetId === this.playerId) {
-            console.log('We are the target of attack');
+          // If we are the target and the attack should be processed, handle damage
+          if (message.targetId === this.playerId && shouldProcessAttack) {
+            console.log('We are the target of attack - applying damage');
             
             // Apply damage directly to player
             if (window.game && window.game.player) {
@@ -168,21 +204,127 @@ class WebSocketManager {
           }
           break;
           
-        case 'playerHealthChanged':
-          console.log('Player health changed:', message);
+        case 'playerAttackMissed':
+          console.log('Attack missed:', message);
           
-          // Update stored health
-          if (message.id && this.otherPlayers[message.id]) {
+          // Notify about missed attack
+          eventBus.emit('network.playerAttackMissed', {
+            id: message.id,
+            targetId: message.targetId,
+            attackType: message.attackType,
+            attackId: message.attackId,
+            reason: message.reason,
+            distance: message.distance,
+            maxRange: message.maxRange
+          });
+          
+          // If we are the attacker, show feedback
+          if (message.id === this.playerId) {
+            console.log(`Your attack missed: Target out of range (${message.distance.toFixed(2)} > ${message.maxRange})`);
+            
+            // Show visual feedback
+            if (window.game && window.game.showAttackMissedFeedback) {
+              window.game.showAttackMissedFeedback(message.reason, message.distance, message.maxRange);
+            }
+            
+            // Show message in UI
+            const missMessage = `Attack missed: Target out of range (${message.distance.toFixed(2)} > ${message.maxRange})`;
+            this._showNotification(missMessage);
+          }
+          break;
+          
+        case 'playerHealth':
+          console.log('Player health update received:', message);
+          
+          // Update stored health for other players
+          if (message.id && message.id !== this.playerId && this.otherPlayers[message.id]) {
+            console.log(`Updating stored health for player ${message.id}: ${message.health}/${message.maxHealth}`);
             this.otherPlayers[message.id].health = message.health;
+            
+            // Also update maxHealth if provided
+            if (message.maxHealth) {
+              this.otherPlayers[message.id].maxHealth = message.maxHealth;
+              
+              // Update stats if they exist
+              if (this.otherPlayers[message.id].stats) {
+                this.otherPlayers[message.id].stats.health = message.maxHealth;
+              }
+            }
           }
           
-          // Notify about health change
+          // Notify about health change with all details
           eventBus.emit('network.playerHealthChanged', {
             id: message.id,
             health: message.health,
             maxHealth: message.maxHealth,
-            damage: message.damage
+            damage: message.damage || 0,
+            attackerId: message.attackerId
           });
+          
+          // If this is our player, ensure the health is updated in the UI
+          if (message.id === this.playerId) {
+            console.log('Our health changed:', message.health);
+            
+            // Update player health directly if available
+            if (window.game && window.game.player) {
+              window.game.player.health = message.health;
+              
+              // Update UI
+              if (typeof window.game.updateHealthUI === 'function') {
+                window.game.updateHealthUI(message.health, message.maxHealth || window.game.player.stats.health);
+              }
+              
+              // If we took damage, play damage effect
+              if (message.damage && message.damage > 0 && typeof window.game.player._playDamageEffect === 'function') {
+                window.game.player._playDamageEffect();
+              }
+            }
+          }
+          break;
+          
+        case 'playerHealthChanged':
+          console.log('Legacy playerHealthChanged message received:', message);
+          
+          // Update stored health for other players
+          if (message.id && message.id !== this.playerId && this.otherPlayers[message.id]) {
+            this.otherPlayers[message.id].health = message.health;
+          }
+          
+          // Notify about health change with all details
+          eventBus.emit('network.playerHealthChanged', {
+            id: message.id,
+            health: message.health,
+            maxHealth: message.maxHealth,
+            damage: message.damage,
+            attackerId: message.attackerId,
+            attackId: message.attackId
+          });
+          
+          // If this is our player, ensure the health is updated in the UI
+          if (message.id === this.playerId) {
+            console.log('Our health changed:', message.health);
+            
+            // Update player health directly if available
+            if (window.game && window.game.player) {
+              window.game.player.health = message.health;
+              
+              // Update UI
+              if (typeof window.game.updateHealthUI === 'function') {
+                window.game.updateHealthUI(message.health, message.maxHealth || window.game.player.stats.health);
+              }
+            }
+            
+            // Dispatch DOM event for any other listeners
+            const healthChangedEvent = new CustomEvent('player-health-changed', {
+              detail: {
+                id: this.playerId,
+                health: message.health,
+                maxHealth: message.maxHealth,
+                damage: message.damage || 0
+              }
+            });
+            document.dispatchEvent(healthChangedEvent);
+          }
           break;
           
         case 'playerDied':
@@ -283,21 +425,95 @@ class WebSocketManager {
    * @param {Object} attackData - The attack data
    */
   sendAttack(attackData) {
-    console.log('Sending attack:', attackData);
+    console.log('[NETWORK] Sending attack to server:', JSON.stringify(attackData, null, 2));
     
-    // Send attack
-    this.sendMessage({
-      type: 'playerAttack',
-      targetId: attackData.targetId,
-      damage: attackData.damage,
-      attackType: attackData.attackType
-    });
+    try {
+      // Ensure the socket exists and is connected
+      if (!this.socket || !this.connected) {
+        console.error('[NETWORK] Cannot send attack: WebSocket not connected!');
+        return;
+      }
+      
+      // Validate required fields
+      if (!attackData.targetId) {
+        console.error('[NETWORK] Cannot send attack: missing targetId');
+        return;
+      }
+      
+      if (!attackData.damage || isNaN(attackData.damage)) {
+        console.error('[NETWORK] Cannot send attack: invalid damage value');
+        return;
+      }
+      
+      // Add current position data to attack if not already included
+      let positionData = attackData.debug?.myPosition || this.playerData?.position || { x: 0, y: 0, z: 0 };
+      
+      // Construct the attack message
+      const attackMessage = {
+        type: 'playerAttack',
+        targetId: attackData.targetId,
+        damage: attackData.damage,
+        attackType: attackData.attackType || 'primary',
+        position: positionData,
+        attackId: attackData.attackId || `client-${Date.now()}`
+      };
+      
+      // Log the exact message being sent
+      console.log('[NETWORK] Sending WebSocket message:', JSON.stringify(attackMessage, null, 2));
+      
+      // Send attack with position
+      this.socket.send(JSON.stringify(attackMessage));
+      
+      // Log success
+      console.log('[NETWORK] Attack message sent successfully');
+      
+      // Emit local event for immediate visual feedback only
+      // NOTE: This DOES NOT actually apply damage - the server will do that
+      eventBus.emit('network.playerAttacked', {
+        id: this.playerId,
+        targetId: attackData.targetId,
+        damage: attackData.damage,
+        attackType: attackData.attackType || 'primary',
+        inRange: true, // Assume in range for visual feedback
+        attackId: attackData.attackId || `client-${Date.now()}`,
+        isLocalVisualOnly: true // Flag to indicate this is just for visual feedback
+      });
+    } catch (error) {
+      console.error('[NETWORK] Error sending attack:', error);
+    }
+  }
+  
+  /**
+   * Show notification message
+   * @param {string} message - The message to show
+   * @private
+   */
+  _showNotification(message) {
+    // Try to find or create notification element
+    let notificationEl = document.getElementById('game-notifications');
     
-    // Emit local event for visualization
-    eventBus.emit('network.playerAttacked', {
-      id: this.playerId,
-      ...attackData
-    });
+    if (!notificationEl) {
+      notificationEl = document.createElement('div');
+      notificationEl.id = 'game-notifications';
+      notificationEl.style.position = 'absolute';
+      notificationEl.style.bottom = '10%';
+      notificationEl.style.left = '50%';
+      notificationEl.style.transform = 'translateX(-50%)';
+      notificationEl.style.color = '#ff3300';
+      notificationEl.style.fontWeight = 'bold';
+      notificationEl.style.textShadow = '1px 1px 2px black';
+      notificationEl.style.fontSize = '18px';
+      notificationEl.style.zIndex = '1000';
+      document.body.appendChild(notificationEl);
+    }
+    
+    // Show message
+    notificationEl.textContent = message;
+    
+    // Clear after 3 seconds
+    setTimeout(() => {
+      notificationEl.textContent = '';
+    }, 3000);
   }
   
   /**
@@ -357,6 +573,38 @@ class WebSocketManager {
     }
     
     this.connected = false;
+  }
+  
+  /**
+   * Debug method to test WebSocket connection
+   * @returns {Object} - Connection status information
+   */
+  debugConnection() {
+    const status = {
+      connected: this.connected,
+      socketExists: !!this.socket,
+      playerId: this.playerId,
+      readyState: this.socket ? this.socket.readyState : 'no socket',
+      otherPlayerCount: Object.keys(this.otherPlayers).length,
+      otherPlayerIds: Object.keys(this.otherPlayers)
+    };
+    
+    console.log('[NETWORK DEBUG] Connection status:', status);
+    
+    // Test sending a simple message
+    if (this.connected && this.socket) {
+      try {
+        this.socket.send(JSON.stringify({
+          type: 'ping',
+          timestamp: Date.now()
+        }));
+        console.log('[NETWORK DEBUG] Test ping message sent successfully');
+      } catch (error) {
+        console.error('[NETWORK DEBUG] Error sending test message:', error);
+      }
+    }
+    
+    return status;
   }
 }
 

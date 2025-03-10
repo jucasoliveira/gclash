@@ -86,6 +86,20 @@ wss.on('connection', (ws) => {
       const data = JSON.parse(message);
       console.log('Received message:', data.type);
       
+      // Handle ping messages (for connection testing)
+      if (data.type === 'ping') {
+        console.log(`Ping received from ${clientId}`);
+        
+        // Send pong response
+        ws.send(JSON.stringify({
+          type: 'pong',
+          timestamp: Date.now(),
+          originalTimestamp: data.timestamp
+        }));
+        
+        return;
+      }
+      
       // Update player data if this is a join message
       if (data.type === 'join') {
         if (data.playerData) {
@@ -157,74 +171,183 @@ wss.on('connection', (ws) => {
       }
       // Handle player attacks
       else if (data.type === 'playerAttack') {
-        console.log(`Player ${clientId} attacked player ${data.targetId} for ${data.damage} damage`);
+        console.log(`==== ATTACK REQUEST from ${clientId} ====`);
+        console.log(`Attack details:`, JSON.stringify(data, null, 2));
         
-        // Broadcast attack to all players
-        wss.clients.forEach((client) => {
-          if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({
-              type: 'playerAttacked',
+        // Generate a unique attack ID for tracking
+        const attackId = data.attackId || uuidv4();
+        
+        // Get attacker and target player data
+        const attacker = players[clientId];
+        const target = players[data.targetId];
+        
+        // Validate that both players exist
+        if (!attacker || !target) {
+          console.log(`Attack invalid: player(s) not found. Attacker: ${!!attacker}, Target: ${!!target}`);
+          if (attacker) {
+            console.log(`Known players: ${Object.keys(players).join(', ')}`);
+            
+            // Send attack missed event back to attacker
+            ws.send(JSON.stringify({
+              type: 'playerAttackMissed',
               id: clientId,
               targetId: data.targetId,
-              damage: data.damage,
-              attackType: data.attackType
+              attackId: attackId,
+              reason: 'target_not_found',
+              message: 'Target player not found'
             }));
           }
-        });
+          return;
+        }
         
-        // Update target player's health in server state
-        if (players[data.targetId]) {
-          const targetPlayer = players[data.targetId];
+        // Validate that attacker and target have position data
+        if (!attacker.position || !target.position) {
+          console.log(`Attack invalid: missing position data. Attacker pos: ${!!attacker.position}, Target pos: ${!!target.position}`);
           
-          // Initialize health if not present
-          if (targetPlayer.health === undefined && targetPlayer.stats && targetPlayer.stats.health) {
-            targetPlayer.health = targetPlayer.stats.health;
-          }
+          // Send attack missed event back to attacker
+          ws.send(JSON.stringify({
+            type: 'playerAttackMissed',
+            id: clientId,
+            targetId: data.targetId,
+            attackId: attackId,
+            reason: 'missing_position_data',
+            message: 'Missing position data'
+          }));
+          return;
+        }
+        
+        // Calculate distance between players
+        const distance = calculateDistance(attacker.position, target.position);
+        
+        // Get range based on attacker class and attack type
+        const attackerClass = attacker.class || 'WARRIOR';
+        let attackRange = 2; // Default range
+        
+        // Determine range based on class (these values should match client-side range settings)
+        if (attackerClass === 'CLERK') {
+          attackRange = 8; // Magic bolts have long range
+        } else if (attackerClass === 'WARRIOR') {
+          attackRange = 2; // Melee attacks have short range
+        } else if (attackerClass === 'RANGER') {
+          attackRange = 10; // Arrows have the longest range
+        }
+        
+        // Log attack attempt with detailed position data
+        console.log(`Attack validation - ID: ${attackId}, Distance: ${distance.toFixed(2)}, Range: ${attackRange}`);
+        console.log(`  Attacker: ${attackerClass} at position (${attacker.position.x.toFixed(2)}, ${attacker.position.y.toFixed(2)}, ${attacker.position.z.toFixed(2)})`);
+        console.log(`  Target: at position (${target.position.x.toFixed(2)}, ${target.position.y.toFixed(2)}, ${target.position.z.toFixed(2)})`);
+        
+        // Check if target is in range
+        if (distance <= attackRange) {
+          console.log(`Attack in range (${distance.toFixed(2)} <= ${attackRange}), processing damage`);
+          console.log(`Broadcasting playerAttacked event with inRange=true`);
           
-          // Update health
-          if (targetPlayer.health !== undefined) {
-            const oldHealth = targetPlayer.health;
-            targetPlayer.health = Math.max(0, targetPlayer.health - data.damage);
-            console.log(`Player ${data.targetId} health updated to ${targetPlayer.health}`);
+          // Update target health
+          const damage = data.damage || 10; // Default damage if not specified
+          const oldHealth = target.health || 100;
+          const maxHealth = target.stats?.health || 100;
+          
+          // Calculate new health
+          target.health = Math.max(0, oldHealth - damage);
+          
+          console.log(`Target health: ${oldHealth} -> ${target.health} (${damage} damage)`);
+          
+          // Broadcast attack to all players
+          wss.clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify({
+                type: 'playerAttacked',
+                id: clientId,
+                targetId: data.targetId,
+                damage: damage,
+                attackType: data.attackType || 'primary',
+                attackId: attackId, // Include attack ID for tracking
+                inRange: true, // Explicitly indicate this was in range
+                distance: distance
+              }));
+            }
+          });
+          
+          // Also send specific health update
+          wss.clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify({
+                type: 'playerHealth',
+                id: data.targetId,
+                health: target.health,
+                maxHealth: maxHealth,
+                damage: damage,
+                attackerId: clientId
+              }));
+            }
+          });
+          
+          // Check if target died
+          if (target.health <= 0) {
+            console.log(`Player ${data.targetId} died from attack by ${clientId}`);
             
-            // Create health change event data
-            const healthChangeData = {
-              id: data.targetId,
-              health: targetPlayer.health,
-              maxHealth: targetPlayer.stats?.health || 100,
-              damage: data.damage,
-              attackerId: clientId
-            };
-            
-            // Broadcast health change to all players
+            // Broadcast death event
             wss.clients.forEach((client) => {
               if (client.readyState === WebSocket.OPEN) {
                 client.send(JSON.stringify({
-                  type: 'playerHealthChanged',
-                  ...healthChangeData
+                  type: 'playerDeath',
+                  id: data.targetId,
+                  attackerId: clientId
                 }));
               }
             });
             
-            // If player died, broadcast death event
-            if (oldHealth > 0 && targetPlayer.health <= 0) {
-              // Create death event data
-              const deathEventData = {
-                id: data.targetId,
-                attackerId: clientId
-              };
-              
-              // Broadcast to all players
-              wss.clients.forEach((client) => {
-                if (client.readyState === WebSocket.OPEN) {
-                  client.send(JSON.stringify({
-                    type: 'playerDied',
-                    ...deathEventData
-                  }));
-                }
-              });
-            }
+            // Respawn player after delay
+            setTimeout(() => {
+              // Only respawn if player is still connected
+              if (players[data.targetId]) {
+                // Generate random respawn position
+                const respawnPosition = {
+                  x: Math.random() * 20 - 10,
+                  y: 0.8,
+                  z: Math.random() * 20 - 10
+                };
+                
+                // Update player position and health
+                players[data.targetId].position = respawnPosition;
+                players[data.targetId].health = maxHealth;
+                
+                console.log(`Player ${data.targetId} respawned at position:`, respawnPosition);
+                
+                // Broadcast respawn event
+                wss.clients.forEach((client) => {
+                  if (client.readyState === WebSocket.OPEN) {
+                    client.send(JSON.stringify({
+                      type: 'playerRespawn',
+                      id: data.targetId,
+                      position: respawnPosition,
+                      health: maxHealth,
+                      maxHealth: maxHealth
+                    }));
+                  }
+                });
+              }
+            }, 3000); // 3 second respawn delay
           }
+        } else {
+          console.log(`Attack out of range (${distance.toFixed(2)} > ${attackRange}), sending miss event`);
+          console.log(`Broadcasting playerAttackMissed event`);
+          
+          // Broadcast attack missed to all players
+          wss.clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify({
+                type: 'playerAttackMissed',
+                id: clientId,
+                targetId: data.targetId,
+                attackId: attackId,
+                distance: distance,
+                maxRange: attackRange,
+                reason: 'out_of_range',
+                message: `Target out of range (${distance.toFixed(1)} > ${attackRange})`
+              }));
+            }
+          });
         }
       }
       // Handle player health changes
@@ -299,8 +422,23 @@ wss.on('connection', (ws) => {
       else if (data.type === 'signal' && data.to) {
         console.log(`Ignoring WebRTC signal from ${clientId} to ${data.to}`);
       }
-    } catch (error) {
-      console.error('Error processing message:', error);
+      else {
+        console.log(`Unknown message type: ${data.type}`);
+      }
+    } catch (err) {
+      console.error('Error processing message:', err);
+      console.error('Raw message:', message.toString());
+      
+      // Send error response
+      try {
+        ws.send(JSON.stringify({
+          type: 'error',
+          message: 'Invalid message format',
+          details: err.message
+        }));
+      } catch (sendError) {
+        console.error('Error sending error response:', sendError);
+      }
     }
   });
   
@@ -343,3 +481,11 @@ process.on('SIGINT', () => {
     });
   });
 });
+
+// Helper function to calculate distance between two 3D points
+function calculateDistance(posA, posB) {
+  const dx = posA.x - posB.x;
+  const dy = posA.y - posB.y;
+  const dz = posA.z - posB.z;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}

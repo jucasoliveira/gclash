@@ -7,6 +7,142 @@ import game from './components/core/Game.js';
 // Expose game globally so Player.js can access it directly for health updates
 window.game = game;
 
+// Add global function for attack miss feedback
+window.showAttackMissedFeedback = (reason, distance, maxRange) => {
+  console.log('Global showAttackMissedFeedback called:', reason, distance, maxRange);
+  if (window.game && typeof window.game.showAttackMissedFeedback === 'function') {
+    window.game.showAttackMissedFeedback(reason, distance, maxRange);
+  } else {
+    // Fallback if game function is not available
+    console.warn(`Attack missed: ${reason}. Distance: ${distance}, Max Range: ${maxRange}`);
+    
+    // Create a temporary DOM element for feedback
+    const missIndicator = document.createElement('div');
+    missIndicator.textContent = 'MISS!';
+    missIndicator.style.position = 'absolute';
+    missIndicator.style.top = '50%';
+    missIndicator.style.left = '50%';
+    missIndicator.style.transform = 'translate(-50%, -50%)';
+    missIndicator.style.color = 'red';
+    missIndicator.style.fontSize = '24px';
+    missIndicator.style.fontWeight = 'bold';
+    missIndicator.style.textShadow = '0 0 5px black';
+    missIndicator.style.zIndex = '1000';
+    
+    document.body.appendChild(missIndicator);
+    
+    // Remove after 1 second
+    setTimeout(() => {
+      document.body.removeChild(missIndicator);
+    }, 1000);
+  }
+};
+
+// Add global debug function for network testing
+window.debugNetwork = () => {
+  console.log("=== NETWORK DEBUG ===");
+  
+  // Check if WebSocket is connected
+  if (window.game && window.game.networkManager) {
+    const connected = window.game.networkManager.connected;
+    console.log(`WebSocket connected: ${connected}`);
+    
+    // Show player ID
+    console.log(`Local player ID: ${window.game.networkManager.playerId}`);
+    
+    // Show other players
+    const otherPlayers = window.game.networkManager.otherPlayers;
+    console.log(`Connected players: ${Object.keys(otherPlayers).length}`);
+    Object.keys(otherPlayers).forEach(id => {
+      console.log(`- Player ${id} (${otherPlayers[id].class})`);
+    });
+    
+    // Send a ping to test connection
+    console.log("Sending ping to server...");
+    window.game.networkManager.sendMessage({
+      type: 'ping',
+      timestamp: Date.now()
+    });
+  } else {
+    console.log("Game or NetworkManager not initialized");
+  }
+};
+
+// Add global function to test attack functionality
+window.testAttack = (targetId = null) => {
+  console.log("=== ATTACK TEST ===");
+  
+  if (!window.game || !window.game.player) {
+    console.error("Game or player not initialized");
+    return;
+  }
+  
+  try {
+    // If no target ID provided, find the nearest player
+    if (!targetId) {
+      console.log("No target ID provided, finding nearest player...");
+      
+      // Get all player entities
+      const players = window.game.getEntitiesByType('player');
+      console.log(`Found ${players.length} players`);
+      
+      // Filter out the local player
+      const otherPlayers = players.filter(p => p.id !== window.game.player.id);
+      console.log(`Found ${otherPlayers.length} other players`);
+      
+      if (otherPlayers.length === 0) {
+        console.error("No other players found to attack");
+        return;
+      }
+      
+      // Find the nearest player
+      let nearestPlayer = null;
+      let nearestDistance = Infinity;
+      
+      otherPlayers.forEach(player => {
+        const distance = window.game.player.position.distanceTo(player.position);
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          nearestPlayer = player;
+        }
+      });
+      
+      if (nearestPlayer) {
+        targetId = nearestPlayer.id;
+        console.log(`Selected nearest player: ${targetId} at distance ${nearestDistance.toFixed(2)}`);
+      }
+    }
+    
+    if (!targetId) {
+      console.error("No target ID available");
+      return;
+    }
+    
+    // Get the target entity
+    const target = window.game.getEntityById(targetId);
+    if (!target) {
+      console.error(`Target entity ${targetId} not found`);
+      return;
+    }
+    
+    console.log(`Attacking target: ${targetId}`);
+    console.log(`Target position: ${JSON.stringify(target.position)}`);
+    console.log(`Player position: ${JSON.stringify(window.game.player.position)}`);
+    
+    // Calculate distance
+    const distance = window.game.player.position.distanceTo(target.position);
+    console.log(`Distance to target: ${distance.toFixed(2)}`);
+    
+    // Execute attack
+    const damage = window.game.player.primaryAttack.damage;
+    window.game.player._executeAttack(targetId, damage, distance);
+    
+    console.log(`Attack executed with damage: ${damage}`);
+  } catch (error) {
+    console.error("Error in testAttack:", error);
+  }
+};
+
 // Add global debug function to test WebSocket connection
 window.testConnection = () => {
   if (!window.game) {

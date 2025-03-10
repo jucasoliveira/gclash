@@ -64,38 +64,59 @@ class Game {
     
     // Listen for player attacks
     eventBus.on('network.playerAttacked', (data) => {
-      if (this.player && data.targetId === this.player.id) {
-        console.log(`Game received attack on player: ${data.damage} damage`);
-        
-        // Update health directly if we have the player reference
-        if (this.player.health !== undefined) {
-          // Calculate new health
-          const newHealth = Math.max(0, this.player.health - data.damage);
+      // Process attacks that have been confirmed by the server or for backward compatibility
+      const shouldProcessAttack = data.inRange !== false;
+      
+      if (shouldProcessAttack) {
+        if (this.player && data.targetId === this.player.id) {
+          console.log(`Game received attack on player: ${data.damage} damage (inRange: ${data.inRange})`);
           
-          // Update UI immediately
-          this.updateHealthUI(newHealth, this.player.stats.health);
-          
-          // Also update the player object's health
-          this.player.health = newHealth;
-          
-          console.log(`Directly set player health to ${newHealth} from attack and updated UI`);
-          
-          // Force direct DOM update (bypass animation frames)
-          const healthFill = document.getElementById('health-fill');
-          if (healthFill) {
-            const percentage = Math.max(0, Math.min(100, (newHealth / this.player.stats.health) * 100));
-            healthFill.style.width = `${percentage}%`;
+          // Update health directly if we have the player reference
+          if (this.player.health !== undefined) {
+            // Calculate new health
+            const newHealth = Math.max(0, this.player.health - data.damage);
             
-            // Change color based on health percentage
-            if (percentage > 60) {
-              healthFill.style.backgroundColor = '#2ecc71'; // Green for high health
-            } else if (percentage > 30) {
-              healthFill.style.backgroundColor = '#f39c12'; // Orange for medium health
-            } else {
-              healthFill.style.backgroundColor = '#e74c3c'; // Red for low health
+            // Update UI immediately
+            this.updateHealthUI(newHealth, this.player.stats.health);
+            
+            // Also update the player object's health
+            this.player.health = newHealth;
+            
+            console.log(`Directly set player health to ${newHealth} from attack and updated UI`);
+            
+            // Force direct DOM update (bypass animation frames)
+            const healthFill = document.getElementById('health-fill');
+            if (healthFill) {
+              const percentage = Math.max(0, Math.min(100, (newHealth / this.player.stats.health) * 100));
+              healthFill.style.width = `${percentage}%`;
+              
+              // Change color based on health percentage
+              if (percentage > 60) {
+                healthFill.style.backgroundColor = '#2ecc71'; // Green for high health
+              } else if (percentage > 30) {
+                healthFill.style.backgroundColor = '#f39c12'; // Orange for medium health
+              } else {
+                healthFill.style.backgroundColor = '#e74c3c'; // Red for low health
+              }
+            }
+            
+            // Create a damage effect
+            if (typeof this.player._playDamageEffect === 'function') {
+              this.player._playDamageEffect();
             }
           }
         }
+      } else {
+        console.log('Received attack event with inRange=false - not applying damage');
+      }
+    });
+    
+    // Listen for missed attacks
+    eventBus.on('network.playerAttackMissed', (data) => {
+      // If we're the attacker, show feedback
+      if (this.player && data.id === this.player.id) {
+        console.log(`Game received attack missed notification: ${data.reason}`);
+        this.showAttackMissedFeedback(data.reason, data.distance, data.maxRange);
       }
     });
     
@@ -293,10 +314,32 @@ class Game {
     this.state = 'loading';
     
     try {
-      // Connect to server
+      // Connect to server with timeout
+      console.log('Connecting to server...');
       await webSocketManager.connect();
+      console.log('Connection successful');
+      
+      // Wait for player ID assignment
+      if (!webSocketManager.playerId) {
+        console.log('Waiting for player ID assignment...');
+        await new Promise((resolve, reject) => {
+          // Set a timeout for ID assignment
+          const timeout = setTimeout(() => {
+            eventBus.off('network.idAssigned');
+            reject(new Error('Timeout waiting for player ID'));
+          }, 5000);
+          
+          // Listen for ID assignment
+          eventBus.once('network.idAssigned', (id) => {
+            console.log(`Player ID assigned: ${id}`);
+            clearTimeout(timeout);
+            resolve();
+          });
+        });
+      }
       
       // Create player with selected class and store reference
+      console.log(`Creating player with class: ${this.selectedClass}`);
       this.player = entityManager.createPlayer(this.selectedClass);
       
       // Set player ID in the HUD
@@ -312,6 +355,7 @@ class Game {
       });
       
       // Join the game with player data
+      console.log('Joining game with player data');
       webSocketManager.joinGame({
         position: this.player.position,
         class: this.selectedClass,
@@ -346,11 +390,26 @@ class Game {
     } catch (error) {
       console.error('Failed to start game:', error);
       
+      // Clean up any partial initialization
+      if (this.player) {
+        entityManager.removeEntity(this.player.id);
+        this.player = null;
+      }
+      
+      // Disconnect from server if connected
+      if (webSocketManager.connected) {
+        webSocketManager.disconnect();
+      }
+      
       // Update state
       this.state = 'characterSelection';
+      this.isRunning = false;
       
       // Show error to user
-      alert('Failed to connect to server. Please try again.');
+      alert(`Failed to connect to server: ${error.message || 'Unknown error'}. Please try again.`);
+      
+      // Show character selection again
+      this._showCharacterSelection();
     }
     
     return this;
@@ -468,6 +527,99 @@ class Game {
   }
 
   /**
+   * Show visual feedback for a missed attack
+   * @param {string} reason - Reason for miss (e.g., 'outOfRange')
+   * @param {number} distance - Distance to target
+   * @param {number} maxRange - Maximum attack range
+   */
+  showAttackMissedFeedback(reason, distance, maxRange) {
+    console.log(`Attack missed: ${reason}, distance: ${distance?.toFixed(2) || 'unknown'}, max range: ${maxRange}`);
+    
+    // Create a missed attack message element
+    let missElement = document.getElementById('miss-feedback');
+    
+    if (!missElement) {
+      missElement = document.createElement('div');
+      missElement.id = 'miss-feedback';
+      missElement.style.position = 'absolute';
+      missElement.style.top = '30%';
+      missElement.style.left = '50%';
+      missElement.style.transform = 'translate(-50%, -50%)';
+      missElement.style.color = '#ff3300';
+      missElement.style.fontWeight = 'bold';
+      missElement.style.fontSize = '24px';
+      missElement.style.fontFamily = 'Arial, sans-serif';
+      missElement.style.textShadow = '1px 1px 2px black';
+      missElement.style.opacity = '0';
+      missElement.style.transition = 'opacity 0.2s ease-in-out';
+      missElement.style.zIndex = '1000';
+      document.body.appendChild(missElement);
+    }
+    
+    // Set message content based on reason
+    let message = 'Attack Missed!';
+    
+    if (reason === 'outOfRange') {
+      message = `Out of Range (${distance.toFixed(1)} > ${maxRange})`;
+    }
+    
+    // Display message
+    missElement.textContent = message;
+    missElement.style.opacity = '1';
+    
+    // Play sound effect if available
+    if (window.playSound) {
+      window.playSound('miss');
+    }
+    
+    // Add miss indicator
+    this._createMissIndicator();
+    
+    // Fade out after a moment
+    setTimeout(() => {
+      missElement.style.opacity = '0';
+    }, 1500);
+  }
+
+  /**
+   * Create a temporary visual miss indicator on the screen
+   * @private
+   */
+  _createMissIndicator() {
+    // Create element
+    const indicator = document.createElement('div');
+    indicator.style.position = 'absolute';
+    indicator.style.top = '50%';
+    indicator.style.left = '50%';
+    indicator.style.width = '60px';
+    indicator.style.height = '60px';
+    indicator.style.borderRadius = '50%';
+    indicator.style.border = '3px solid #ff3300';
+    indicator.style.transform = 'translate(-50%, -50%)';
+    indicator.style.opacity = '0.8';
+    indicator.style.zIndex = '900';
+    indicator.style.pointerEvents = 'none'; // Don't capture mouse events
+    document.body.appendChild(indicator);
+    
+    // Animate
+    let size = 1.0;
+    const animate = () => {
+      size += 0.1;
+      indicator.style.transform = `translate(-50%, -50%) scale(${size})`;
+      indicator.style.opacity = Math.max(0, 0.8 - (size - 1) * 0.8);
+      
+      if (size < 2.0) {
+        requestAnimationFrame(animate);
+      } else {
+        // Remove when animation complete
+        document.body.removeChild(indicator);
+      }
+    };
+    
+    requestAnimationFrame(animate);
+  }
+
+  /**
    * Clean up resources
    */
   dispose() {
@@ -484,10 +636,17 @@ class Game {
     // Remove combat event listeners
     eventBus.off('network.playerHealthChanged');
     eventBus.off('network.playerAttacked');
-    
+    eventBus.off('network.playerAttackMissed');
+
     // Remove player-specific health event listener
     if (this.player) {
       eventBus.off(`entity.${this.player.id}.healthChanged`);
+    }
+
+    // Clean up any missed attack UI elements
+    const missElement = document.getElementById('miss-feedback');
+    if (missElement && missElement.parentNode) {
+      missElement.parentNode.removeChild(missElement);
     }
     
     // Remove UI event listeners
@@ -515,6 +674,26 @@ class Game {
     this.isInitialized = false;
     this.isRunning = false;
     this.state = 'idle';
+  }
+
+  /**
+   * Get an entity by ID
+   * @param {string} id - Entity ID
+   * @returns {Entity|null} - Entity or null if not found
+   */
+  getEntityById(id) {
+    if (!id) return null;
+    return this.entityManager.getEntity(id);
+  }
+  
+  /**
+   * Get all entities of a specific type
+   * @param {string} type - Entity type
+   * @returns {Array} - Array of entities
+   */
+  getEntitiesByType(type) {
+    if (!type) return [];
+    return this.entityManager.getEntitiesByType(type);
   }
 }
 
