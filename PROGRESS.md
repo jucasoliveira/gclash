@@ -219,6 +219,44 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
   - Improved error handling for edge cases
   - Enhanced cleanup of temporary effects
 
+### Step 12: Combat System Enhancement and Bug Fixes
+- Fixed player health UI synchronization issues:
+  - Implemented reliable health bar updates when taking damage
+  - Created multiple redundant paths to ensure health UI updates work
+  - Added direct DOM manipulation for critical UI updates
+  - Made health bar color transition smoothly based on health percentage
+- Enhanced death and respawn experience:
+  - Improved death screen with animated "YOU DIED" message
+  - Added respawn countdown timer for better player feedback
+  - Fixed player mesh visibility on death and respawn
+  - Created consistent death experience across all clients
+  - Added particle effects for both death and respawn events
+- Implemented robust server-client synchronization:
+  - Enhanced Socket.io events to ensure reliable health updates
+  - Added global functions to bypass framework limitations
+  - Implemented direct communication channel for critical game events
+  - Made server broadcast complete information for health and respawn events
+- Improved attack visualization and feedback:
+  - Made attacks visible to all players consistently
+  - Enhanced attack effects with projectile animations
+  - Fixed issues with attack cooldowns
+  - Added attack indicators for better feedback
+- Created comprehensive error handling:
+  - Added fallback mechanisms for missing DOM elements
+  - Implemented extensive logging for combat events
+  - Created recovery strategies for synchronization errors
+  - Added validation to prevent invalid health values
+- Enhanced combat-related UI:
+  - Improved health bar visual design
+  - Made damage numbers more visible
+  - Added attacker information to death screen
+  - Created smooth transitions for health changes
+- Fixed multiplayer combat edge cases:
+  - Ensured defeated players are properly hidden from all clients
+  - Fixed respawned players appearing for all connected clients
+  - Corrected health synchronization across multiple clients
+  - Implemented proper cleanup of temporary combat effects
+
 ## Socket.io Events Implementation
 - **playerJoin**: Sent when player connects with player data and class
 - **existingPlayers**: Received by new players with data about all current players
@@ -227,13 +265,69 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
 - **playerMoved**: Received when other players move to update their position
 - **playerLeft**: Received when a player disconnects to remove them from scene
 - **playerAttack**: Sent when player performs an attack with target and damage data
+  ```javascript
+  {
+    targetId: 'player123',
+    damage: 18,
+    attackType: 'Quick Shot'
+  }
+  ```
 - **playerAttacked**: Broadcast when a player attacks to show effect to all clients
+  ```javascript
+  {
+    id: 'attacker123',
+    targetId: 'player123',
+    damage: 18,
+    attackType: 'Quick Shot'
+  }
+  ```
 - **playerHealthChange**: Sent when player's health changes
+  ```javascript
+  {
+    health: 62,
+    maxHealth: 80,
+    damage: 18
+  }
+  ```
 - **playerHealthChanged**: Broadcast player health updates to all clients
+  ```javascript
+  {
+    id: 'player123',
+    health: 62,
+    maxHealth: 80,
+    damage: 18,
+    attackerId: 'attacker123'
+  }
+  ```
 - **playerDeath**: Sent when player's health reaches zero
+  ```javascript
+  {
+    position: {x: 2, y: 0.8, z: 3}
+  }
+  ```
 - **playerDied**: Broadcast to notify all clients when a player dies
+  ```javascript
+  {
+    id: 'player123',
+    attackerId: 'attacker123'
+  }
+  ```
 - **playerRespawn**: Sent when a player respawns after death
+  ```javascript
+  {
+    position: {x: -3, y: 0.8, z: 4},
+    health: 100
+  }
+  ```
 - **playerRespawned**: Broadcast to update all clients when a player respawns
+  ```javascript
+  {
+    id: 'player123',
+    position: {x: -3, y: 0.8, z: 4},
+    health: 100,
+    maxHealth: 100
+  }
+  ```
 
 ## Current Features
 - **3D Isometric World**: True isometric view with grid-based ground
@@ -243,25 +337,105 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
 - **Class-Based Visuals**: Different colored models based on class choice
 - **Combat System**: Class-specific attacks with visual effects and damage
 - **Health System**: Health bars, damage visualization, and death mechanics
-- **Respawn System**: Automatic respawn with animation after death
-- **Network Synchronization**: Consistent game state across all clients
+  - In-game UI with health bar that changes color based on health percentage
+  - Floating health bars above characters visible to all players
+  - Floating damage numbers showing exact damage dealt
+  - Screen flash and camera shake when taking damage
+- **Death Mechanics**: Complete death and respawn experience
+  - Particle explosion effect on death
+  - Hidden character model when defeated
+  - Full-screen death overlay with customized message
+  - Countdown timer for respawn
+  - Information about which player defeated you
+- **Respawn System**: 
+  - Automatic respawn after countdown
+  - Random respawn location for balance
+  - Respawn effects with particles and light
+  - Health restoration to maximum
+  - Character reappears for all players
+- **Network Synchronization**: 
+  - Consistent game state across all clients
+  - Health synchronization between all players
+  - Attack and damage visibility for spectators
+  - Position interpolation for smooth movement
+  - Reliable combat outcomes across the network
 - **Modern Development**: Vite-based development environment
 
 ## Next Steps
 1. **Advanced Combat**: Add secondary and ultimate abilities for each class
+   - Unique secondary abilities with medium cooldowns
+   - Powerful ultimate abilities with long cooldowns
+   - Visual effects and animations for all abilities
+   - Class-specific gameplay mechanics
 2. **Combat Balancing**: Adjust damage, health, and cooldowns for balanced gameplay
+   - Fine-tune damage values based on testing
+   - Adjust health pools for different classes
+   - Implement diminishing returns for crowd control
+   - Create counter-play opportunities between classes
 3. **Environment Interaction**: Add obstacles, terrain effects, and interactive elements
+   - Destructible objects that provide temporary cover
+   - Health pickups and buff zones
+   - Hazardous areas with damage over time
+   - Jump pads and teleporters for mobility
 4. **Tournament System**: Implement 1v1 tournament mode with brackets
+   - Lobby system for tournament creation
+   - Automatic bracket generation
+   - Match spectating for eliminated players
+   - Victory celebration and rewards system
 5. **Battle Royale**: Create 40-player battle royale mode with shrinking play area
+   - Larger map with varied terrain
+   - Shrinking safe zone with damage outside
+   - Item pickups and equipment
+   - Last player standing victory condition
 6. **Database Integration**: Set up player data persistence and leaderboard
+   - Player accounts with authentication
+   - Stats tracking (wins, kills, damage)
+   - Global and class-specific leaderboards
+   - Achievement system for milestones
 7. **Audio System**: Add sound effects for combat, movement, and environment
+   - Attack and impact sounds
+   - Footsteps and movement audio
+   - Ambient environmental sounds
+   - Music system with combat detection
 8. **Enhanced Visuals**: Improve player models, effects, and environment
+   - Detailed character models per class
+   - Environment themes with unique terrain
+   - Polish particle effects and animations
+   - Lighting improvements and day/night cycle
 
 ## Technical Notes
-- The project uses a client-server architecture with real-time communication
-- Frontend is built with three.js for 3D rendering and HTML/CSS for UI
-- Backend uses Node.js with Express and Socket.io for real-time gameplay
-- MongoDB is planned for data persistence (currently optional for development)
-- Development tools now include Vite for more efficient frontend development
-- Socket.io provides the real-time communication backbone
-- The game follows an entity-component style architecture
+- **Architecture**:
+  - Client-server architecture with real-time communication
+  - Component-based design for modularity and reusability
+  - Event-driven systems to keep components loosely coupled
+  - Entity-component pattern for game objects
+- **Frontend**:
+  - Three.js for 3D rendering and scene management
+  - HTML/CSS for UI elements and game interface
+  - Vite for efficient development and hot module replacement
+  - ES6+ JavaScript with modular structure
+- **Backend**:
+  - Node.js with Express for HTTP server
+  - Socket.io for real-time bidirectional communication
+  - In-memory game state with future MongoDB integration
+  - Server-authoritative model for combat to prevent cheating
+- **Networking**:
+  - Socket.io events for game updates and player actions
+  - Binary encoding planned for position updates (optimization)
+  - Server validation of all player actions
+  - Throttled updates to reduce bandwidth usage
+- **Combat System**:
+  - Client-side prediction with server validation
+  - Visual effects synchronized across all clients
+  - Health and damage calculations performed server-side
+  - Multiple redundant paths for critical updates
+- **Performance Optimizations**:
+  - Object pooling for frequently created/destroyed objects
+  - Throttled network updates for non-critical information
+  - Efficient use of Three.js materials and geometries
+  - DOM updates optimized for performance
+- **Development Workflow**:
+  - ESLint for code quality
+  - Structured documentation in markdown
+  - Clear component responsibilities and interfaces
+  - Extensive console logging for debugging

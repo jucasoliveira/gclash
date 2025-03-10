@@ -752,52 +752,64 @@ class Player extends Entity {
     // Create particle explosion like OtherPlayer
     this._createDeathParticles();
     
-    // Create full-screen death overlay
-    const existingOverlay = document.getElementById('death-overlay');
-    if (existingOverlay) {
-      console.log('Death overlay already exists, not creating another one');
+    // Use the global death screen if available
+    if (window.showDeathScreen) {
+      console.log('Using global death screen');
+      window.showDeathScreen();
+      
+      // Respawn player after a delay
+      setTimeout(() => {
+        console.log('Auto-respawning player after death');
+        this._respawn();
+      }, 3500); // Wait for countdown plus transition
+      
       return;
     }
     
-    console.log('Creating death overlay');
+    // Fallback: Use DOM-based death overlay if global function not available
+    console.log('Using fallback death overlay');
+    const existingOverlay = document.querySelector('.death-overlay');
+    if (existingOverlay) {
+      // Use the existing overlay
+      console.log('Using existing death overlay element');
+      existingOverlay.classList.add('visible');
+      
+      // Respawn player after a delay
+      setTimeout(() => {
+        existingOverlay.classList.remove('visible');
+        this._respawn();
+      }, 3000);
+      
+      return;
+    }
+    
+    // Last resort: Create a simple death overlay
+    console.log('Creating simple death overlay as last resort');
     const deathOverlay = document.createElement('div');
-    deathOverlay.id = 'death-overlay';
     deathOverlay.style.position = 'fixed';
     deathOverlay.style.top = '0';
     deathOverlay.style.left = '0';
     deathOverlay.style.width = '100%';
     deathOverlay.style.height = '100%';
-    deathOverlay.style.backgroundColor = 'rgba(0, 0, 0, 0)';
-    deathOverlay.style.transition = 'background-color 2s ease-in';
+    deathOverlay.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
     deathOverlay.style.display = 'flex';
     deathOverlay.style.justifyContent = 'center';
     deathOverlay.style.alignItems = 'center';
-    deathOverlay.style.color = 'rgba(255, 0, 0, 0)';
+    deathOverlay.style.color = '#e74c3c';
     deathOverlay.style.fontSize = '72px';
     deathOverlay.style.fontWeight = 'bold';
-    deathOverlay.style.textShadow = '2px 2px 8px #000000';
     deathOverlay.style.zIndex = '2000';
-    deathOverlay.style.pointerEvents = 'none';
     deathOverlay.textContent = 'YOU DIED';
     
     document.body.appendChild(deathOverlay);
     
-    // Fade in death screen
+    // Respawn player after a delay
     setTimeout(() => {
       if (document.body.contains(deathOverlay)) {
-        deathOverlay.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-        deathOverlay.style.color = 'rgba(255, 0, 0, 1)';
+        document.body.removeChild(deathOverlay);
+        this._respawn();
       }
-      
-      // Respawn player after a delay
-      setTimeout(() => {
-        if (document.body.contains(deathOverlay)) {
-          console.log('Removing death overlay and respawning');
-          document.body.removeChild(deathOverlay);
-          this._respawn();
-        }
-      }, 3000);
-    }, 50);
+    }, 3000);
   }
   
   /**
@@ -885,10 +897,17 @@ class Player extends Entity {
    * @private
    */
   _respawn() {
+    console.log('RESPAWN: Player respawning...');
+    
     // Reset health
     this.health = this.stats.health;
     
-    // Update UI
+    // CRITICAL: Direct update health display
+    if (window.updateHealthUI) {
+      window.updateHealthUI(this.health, this.stats.health);
+    }
+    
+    // Update UI through normal method as well
     this._updateHealthUI();
     
     // Move to a different position
@@ -898,19 +917,35 @@ class Player extends Entity {
     
     // Make player mesh visible again
     if (this.mesh) {
+      console.log('RESPAWN: Making player mesh visible again');
+      this.mesh.visible = true;
+    } else {
+      console.error('RESPAWN: Player mesh not found!');
+      // Try to recreate mesh if it's missing
+      this._createPlayerMesh();
       this.mesh.visible = true;
     }
     
     // Create respawn effect
     this._createRespawnEffect();
     
+    // Make sure health bar is restored
+    const healthFill = document.getElementById('health-fill');
+    if (healthFill) {
+      healthFill.style.width = '100%';
+      healthFill.style.backgroundColor = '#2ecc71'; // Green for full health
+    }
+    
     // Emit respawn event
     eventBus.emit(`entity.${this.id}.respawned`, { 
       entityId: this.id,
-      position: this.position.clone()
+      position: this.position.clone(),
+      health: this.health
     });
     
-    // Send respawn notification to server
+    // CRITICAL: Send respawn notification to server with explicit health
+    console.log(`RESPAWN: Sending respawn data to server: health=${this.health}, pos=(${this.position.x}, ${this.position.y}, ${this.position.z})`);
+    
     networkManager.sendPlayerRespawn({
       position: {
         x: this.position.x,
@@ -920,7 +955,7 @@ class Player extends Entity {
       health: this.health
     });
     
-    console.log('Player respawned!');
+    console.log('RESPAWN: Player respawned successfully!');
   }
   
   /**

@@ -192,6 +192,56 @@
             user-select: none;
         }
         
+        /* Death screen styles */
+        .death-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            transition: opacity 1s ease-in;
+            pointer-events: none;
+        }
+        
+        .death-overlay.visible {
+            opacity: 1;
+        }
+        
+        .death-title {
+            font-size: 72px;
+            color: #e74c3c;
+            text-shadow: 0 0 10px rgba(231, 76, 60, 0.7);
+            margin-bottom: 20px;
+            animation: pulse 2s infinite;
+        }
+        
+        .death-message {
+            font-size: 24px;
+            color: #fff;
+            text-align: center;
+            max-width: 80%;
+            margin-bottom: 40px;
+        }
+        
+        .respawn-timer {
+            font-size: 36px;
+            color: #f1c40f;
+            margin-bottom: 20px;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        
         /* Cooldown styles */
         .cooldown-container {
             margin-top: 10px;
@@ -283,6 +333,13 @@
     <!-- UI Overlay for HTML/CSS UI elements -->
     <div class="ui-overlay" id="ui-overlay"></div>
     
+    <!-- Death overlay -->
+    <div class="death-overlay" id="death-overlay">
+        <div class="death-title">YOU DIED</div>
+        <div class="death-message">You were defeated in battle!</div>
+        <div class="respawn-timer" id="respawn-timer">Respawning in 3...</div>
+    </div>
+    
     <!-- Vite entry point -->
     <!-- Direct health bar update handling to bypass any potential issues -->
     <script>
@@ -332,6 +389,60 @@
       document.addEventListener('socket-health-update', (event) => {
         if (event.detail) {
           window.updateHealthUI(event.detail.health, event.detail.maxHealth);
+        }
+      });
+      
+      // Global death handling function
+      window.showDeathScreen = function(attackerId) {
+        console.log('GLOBAL: Showing death screen');
+        
+        // Get death overlay
+        const deathOverlay = document.getElementById('death-overlay');
+        const respawnTimer = document.getElementById('respawn-timer');
+        const deathMessage = document.querySelector('.death-message');
+        
+        if (!deathOverlay) {
+          console.error('Death overlay not found in DOM!');
+          return;
+        }
+        
+        // Update death message if attacker info is available
+        if (attackerId) {
+          deathMessage.textContent = `You were defeated by player ${attackerId}!`;
+        } else {
+          deathMessage.textContent = 'You were defeated in battle!';
+        }
+        
+        // Show death overlay
+        deathOverlay.classList.add('visible');
+        
+        // Start respawn countdown
+        let countdown = 3;
+        respawnTimer.textContent = `Respawning in ${countdown}...`;
+        
+        const interval = setInterval(() => {
+          countdown--;
+          if (countdown > 0) {
+            respawnTimer.textContent = `Respawning in ${countdown}...`;
+          } else {
+            respawnTimer.textContent = 'Respawning...';
+            clearInterval(interval);
+            
+            // Hide death overlay after a short delay
+            setTimeout(() => {
+              deathOverlay.classList.remove('visible');
+            }, 500);
+          }
+        }, 1000);
+      };
+      
+      // Listen for death events
+      document.addEventListener('player-died', (event) => {
+        if (event.detail) {
+          window.showDeathScreen(event.detail.attackerId);
+          
+          // Set health to zero
+          window.updateHealthUI(0, 100);
         }
       });
     </script>

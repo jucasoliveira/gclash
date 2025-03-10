@@ -218,6 +218,21 @@ class NetworkManager {
           playerStats.textContent = `Health: 0/100`;
         }
         
+        // CRITICAL: Show death screen using global function
+        if (window.showDeathScreen) {
+          console.log('NETWORK: Calling global showDeathScreen function');
+          window.showDeathScreen(deathData.attackerId);
+        }
+        
+        // Also dispatch a DOM event
+        const deathEvent = new CustomEvent('player-died', {
+          detail: {
+            id: deathData.id,
+            attackerId: deathData.attackerId
+          }
+        });
+        document.dispatchEvent(deathEvent);
+        
         // Find player object through EntityManager and hide its mesh
         eventBus.emit('entityManager.getPlayerByID', {
           id: deathData.id,
@@ -225,11 +240,6 @@ class NetworkManager {
             if (player && player.mesh) {
               console.log('CRITICAL: Hiding player mesh directly on death event');
               player.mesh.visible = false;
-              
-              // Force death effect
-              if (typeof player._showDeathEffect === 'function') {
-                player._showDeathEffect();
-              }
               
               // Set health to zero
               player.health = 0;
@@ -242,7 +252,39 @@ class NetworkManager {
     });
     
     this.socket.on('playerRespawned', (respawnData) => {
-      console.log(`NETWORK: Respawn event received - Player ${respawnData.id} respawned`);
+      console.log(`NETWORK: Respawn event received - Player ${respawnData.id} respawned with health ${respawnData.health}`);
+      
+      // Special handling for local player respawn
+      if (this.socket && respawnData.id === this.socket.id) {
+        console.log('NETWORK: This is our own respawn event');
+        
+        // Update health UI 
+        if (window.updateHealthUI) {
+          window.updateHealthUI(respawnData.health, respawnData.maxHealth || 100);
+        }
+        
+        // Also update the DOM directly
+        const healthFill = document.getElementById('health-fill');
+        const playerStats = document.getElementById('player-stats');
+        
+        if (healthFill) {
+          healthFill.style.transition = 'none';
+          healthFill.style.width = '100%';
+          healthFill.style.backgroundColor = '#2ecc71';
+          healthFill.offsetHeight; // Force reflow
+          
+          // Restore transition after a brief delay
+          setTimeout(() => {
+            healthFill.style.transition = 'width 0.3s ease-out, background-color 0.3s ease-out';
+          }, 50);
+        }
+        
+        if (playerStats) {
+          playerStats.textContent = `Health: ${respawnData.health}/${respawnData.maxHealth || 100}`;
+        }
+      }
+      
+      // Emit the event for EntityManager to handle
       eventBus.emit('network.playerRespawned', respawnData);
     });
   }

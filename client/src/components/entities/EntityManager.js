@@ -832,42 +832,46 @@ class EntityManager {
     // Handle other player respawn
     const player = this.getEntity(data.id);
     if (player) {
-      console.log(`Other player ${data.id} respawned`);
+      console.log(`Other player ${data.id} respawned with health=${data.health}`);
       
       // Reset health
       player.health = data.health || (player.stats ? player.stats.health : 100);
       
-      // Update visuals for other players
+      // CRITICAL: Handle all player types including our own player
+      // Update mesh visibility and position
+      if (player.mesh) {
+        console.log(`Making player ${data.id} mesh visible again`);
+        player.mesh.visible = true;
+      } else {
+        console.warn(`Player ${data.id} has no mesh on respawn`);
+      }
+      
+      // Update position
+      if (data.position) {
+        player.position.set(
+          data.position.x,
+          data.position.y,
+          data.position.z
+        );
+        
+        // Update mesh position
+        if (player.mesh) {
+          player.mesh.position.copy(player.position);
+        }
+      }
+      
+      // Additional handling for other players
       if (player.type === 'otherPlayer') {
         // Update health bar
         if (typeof player._createHealthIndicator === 'function') {
           player._createHealthIndicator();
-        }
-        
-        // Update position
-        if (data.position) {
-          player.position.set(
-            data.position.x,
-            data.position.y,
-            data.position.z
-          );
-          
-          // Update mesh position
-          if (player.mesh) {
-            player.mesh.position.copy(player.position);
-          }
-          
-          // Make player visible again if it was hidden
-          if (player.mesh) {
-            player.mesh.visible = true;
-          }
         }
       }
       
       // Create respawn effect
       this._createRespawnEffect(player.position.clone());
       
-      console.log(`Player ${data.id} respawned at position ${JSON.stringify(data.position)}`);
+      console.log(`Player ${data.id} fully respawned and visible at position ${JSON.stringify(data.position)}`);
     }
   }
   

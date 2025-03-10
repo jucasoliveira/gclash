@@ -190,6 +190,8 @@ io.on('connection', (socket) => {
   
   // Handle player respawn
   socket.on('playerRespawn', (respawnData) => {
+    console.log(`Received respawn from player ${socket.id}:`, respawnData);
+    
     // Update player position and health in server state
     if (players[socket.id]) {
       if (respawnData.position) {
@@ -197,16 +199,26 @@ io.on('connection', (socket) => {
       }
       if (respawnData.health) {
         players[socket.id].health = respawnData.health;
+      } else if (players[socket.id].stats && players[socket.id].stats.health) {
+        // Default to full health if not specified
+        players[socket.id].health = players[socket.id].stats.health;
       }
+      
+      console.log(`Updated server state for player ${socket.id}: health=${players[socket.id].health}, position=${JSON.stringify(players[socket.id].position)}`);
     }
     
-    // Broadcast to other players
-    socket.broadcast.emit('playerRespawned', {
+    // Create respawn data to ensure it contains all necessary fields
+    const fullRespawnData = {
       id: socket.id,
-      ...respawnData
-    });
+      position: respawnData.position || players[socket.id]?.position || { x: 0, y: 0.8, z: 0 },
+      health: respawnData.health || players[socket.id]?.health || 100,
+      maxHealth: players[socket.id]?.stats?.health || 100
+    };
     
-    console.log(`Player ${socket.id} respawned at position ${JSON.stringify(respawnData.position)}`);
+    // Broadcast to ALL players including the sender to ensure consistent state
+    io.emit('playerRespawned', fullRespawnData);
+    
+    console.log(`Player ${socket.id} respawned with health ${fullRespawnData.health} at position ${JSON.stringify(fullRespawnData.position)}`);
   });
   
   // Handle disconnection
