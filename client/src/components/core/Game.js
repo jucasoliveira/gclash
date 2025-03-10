@@ -1,7 +1,7 @@
 import eventBus from './EventBus.js';
 import renderer from './Renderer.js';
 import inputManager from '../controls/InputManager.js';
-import networkManager from '../network/NetworkManager.js';
+import webSocketManager from '../network/WebSocketManager.js';
 import entityManager from '../entities/EntityManager.js';
 import grid from '../world/Grid.js';
 import uiManager from '../ui/UIManager.js';
@@ -20,6 +20,13 @@ class Game {
     
     // Selected class
     this.selectedClass = null;
+    
+    // Expose managers for direct access
+    this.networkManager = webSocketManager;
+    this.entityManager = entityManager;
+    this.renderer = renderer;
+    this.inputManager = inputManager;
+    this.uiManager = uiManager;
     
     // Event bindings
     this._boundHandleClassSelection = this._handleClassSelection.bind(this);
@@ -41,7 +48,7 @@ class Game {
     inputManager.init();
     entityManager.init();
     grid.init();
-    networkManager.configure();
+    webSocketManager.configure();
     uiManager.init();
     
     // Set up UI event listeners
@@ -287,7 +294,7 @@ class Game {
     
     try {
       // Connect to server
-      await networkManager.connect();
+      await webSocketManager.connect();
       
       // Create player with selected class and store reference
       this.player = entityManager.createPlayer(this.selectedClass);
@@ -304,6 +311,23 @@ class Game {
         this.updateHealthUI(data.health, data.maxHealth);
       });
       
+      // Join the game with player data
+      webSocketManager.joinGame({
+        position: this.player.position,
+        class: this.selectedClass,
+        stats: this.player.stats,
+        type: 'player'
+      });
+      
+      // Listen for join failures
+      const joinFailureHandler = (data) => {
+        console.error('Failed to join game:', data.error);
+        eventBus.off('network.joinFailed', joinFailureHandler);
+        throw new Error('Failed to join game');
+      };
+      
+      eventBus.once('network.joinFailed', joinFailureHandler);
+      
       // Start rendering
       renderer.startRendering();
       
@@ -316,6 +340,9 @@ class Game {
       
       // Explicitly show HUD
       uiManager.showHUD();
+      
+      // Remove the join failure handler
+      eventBus.off('network.joinFailed', joinFailureHandler);
     } catch (error) {
       console.error('Failed to start game:', error);
       
@@ -342,7 +369,7 @@ class Game {
     renderer.stopRendering();
     
     // Disconnect from server
-    networkManager.disconnect();
+    webSocketManager.disconnect();
     
     // Update state
     this.state = 'idle';

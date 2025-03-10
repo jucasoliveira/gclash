@@ -1,11 +1,13 @@
 # Guild Clash - Development Progress
 
 ## Project Overview
+
 Guild Clash is a browser-based isometric 3D multiplayer game using three.js, featuring 1v1 tournaments and a 40-player battle royale mode with three character classes (Clerk, Warrior, Ranger) and a leaderboard.
 
 ## Comprehensive Development Documentation
 
 ### Step 1: Project Structure (Initial Setup)
+
 - Created the basic project structure with `/client` and `/server` folders
 - Initialized npm in both directories with `package.json` files
 - Created README.md with basic project information
@@ -13,6 +15,7 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
 - Created global_rules.md for tech stack definition
 
 ### Step 2: Front-End Tools
+
 - Installed front-end dependencies:
   - three.js for 3D rendering
   - socket.io-client for real-time communication
@@ -27,6 +30,7 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
 - Created basic entry point in client/src/main.js
 
 ### Step 3: Back-End Tools
+
 - Installed back-end dependencies:
   - express for the web server
   - socket.io for real-time communication
@@ -41,6 +45,7 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
 - Added graceful shutdown handling
 
 ### Step 4: Basic 3D Scene
+
 - Created a basic three.js scene with:
   - Scene initialization with sky blue background
   - Scene, camera, and renderer setup
@@ -55,6 +60,7 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
 - Implemented basic event handling for browser window resize
 
 ### Step 5: Client-Server Communication
+
 - Connected the front-end to the back-end with Socket.io
 - Implemented event handlers:
   - playerJoin: Sends player data when connecting
@@ -69,6 +75,7 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
 - Structured the server to store player state
 
 ### Step 6: Isometric Camera
+
 - Implemented an isometric camera view:
   - Used OrthographicCamera for the true isometric look
   - Set camera at 45° rotation and ~35.264° elevation (true isometric angles)
@@ -80,9 +87,10 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
   - Movement is aligned with the isometric perspective
   - Camera and target move together to maintain the view
   - Implemented key handling for smooth movement
-- Created camera position/target update function 
+- Created camera position/target update function
 
 ### Step 7: Player Model & Controls
+
 - Added a player model:
   - Created a simple 3D box for the player (blue color)
   - Positioned the player separately from the test cube
@@ -103,6 +111,7 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
   - Implemented player data dictionary to track active players
 
 ### Step 8: Development Environment Improvements
+
 - Migrated from Webpack to Vite for better development experience:
   - Faster builds and hot module replacement
   - Simplified configuration
@@ -123,6 +132,7 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
   - Documented new environment setup in PROGRESS.md
 
 ### Step 9: Character Classes
+
 - Defined three character classes with distinct properties:
   - Clerk: Blue color, low health (80), high speed (0.15)
     - Magic user specializing in fast movement
@@ -153,6 +163,7 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
   - Game state tracking with gameStarted flag
 
 ### Step 10: Component-based Architecture Refactoring
+
 - Created modular, maintainable code structure following component architecture:
   - Defined architecture in `architecture.md` with clear component responsibilities
   - Created directory structure for components, configs, and utilities
@@ -189,6 +200,7 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
   - Centralized event communication
 
 ### Step 11: Combat System Implementation
+
 - Implemented class-specific primary attacks:
   - **Clerk**: Magic bolt (ranged, blue sphere projectile)
   - **Warrior**: Melee swing (close range, red arc)
@@ -220,6 +232,7 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
   - Enhanced cleanup of temporary effects
 
 ### Step 12: Combat System Enhancement and Bug Fixes
+
 - Fixed player health UI synchronization issues:
   - Implemented reliable health bar updates when taking damage
   - Created multiple redundant paths to ensure health UI updates work
@@ -258,6 +271,7 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
   - Implemented proper cleanup of temporary combat effects
 
 ### Step 13: Advanced HUD Implementation with Resource Systems
+
 - Created a new component-based UI architecture:
   - Implemented UIManager as central manager for all UI components
   - Developed HUD component for in-game heads-up display
@@ -293,82 +307,168 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
   - Ensured smooth migration path for future development
   - Added extensive debugging and logging
 
-## Socket.io Events Implementation
-- **playerJoin**: Sent when player connects with player data and class
+### Step 14: WebSocket Implementation for Improved Multiplayer
+
+- Replaced WebRTC with WebSocket for more reliable multiplayer communication:
+  - Created a new `WebSocketManager` class to handle all network communication
+  - Removed WebRTC-related code and dependencies
+  - Simplified connection process with direct WebSocket connection
+  - Enhanced error handling and reconnection logic
+- Improved server-side implementation:
+  - Enhanced server.js to handle WebSocket messages more effectively
+  - Implemented server-side validation for player actions
+  - Added more robust player tracking with unique IDs
+  - Created centralized game state management on the server
+- Enhanced multiplayer synchronization:
+  - Improved player movement synchronization with more frequent updates
+  - Fixed issues with damage reflection in combat
+  - Enhanced player joining/leaving handling
+  - Added more detailed server logging for debugging
+- Benefits of the WebSocket approach:
+  - Simplified architecture with direct client-server communication
+  - More reliable connection without peer negotiation complexities
+  - Centralized game logic for better consistency
+  - Easier debugging with server-side logging
+  - Reduced client-side complexity
+- Technical implementation details:
+  - Used native WebSocket API for browser clients
+  - Implemented message types for different game events
+  - Created robust message handling with JSON parsing
+  - Added connection status monitoring
+  - Implemented graceful reconnection handling
+- Testing and validation:
+  - Verified multiplayer functionality with multiple browser instances
+  - Confirmed proper synchronization of player movements
+  - Validated combat system working correctly across clients
+  - Tested player joining and leaving scenarios
+  - Verified health synchronization and damage application
+
+## WebSocket Message Types
+
+- **id**: Received when connecting to assign a unique client ID
+  ```javascript
+  {
+    type: 'id',
+    id: 'client123'
+  }
+  ```
+- **join**: Sent when player connects with player data and class
+  ```javascript
+  {
+    type: 'join',
+    position: {x: 2, y: 0.8, z: 2},
+    class: 'CLERK',
+    stats: {...},
+    type: 'player',
+    id: 'client123'
+  }
+  ```
 - **existingPlayers**: Received by new players with data about all current players
-- **playerJoined**: Broadcast to existing players when a new player joins
+  ```javascript
+  {
+    type: 'existingPlayers',
+    players: [{id: 'player1', position: {...}, class: 'WARRIOR', ...}, ...]
+  }
+  ```
+- **newPlayer**: Broadcast to existing players when a new player joins
+  ```javascript
+  {
+    type: 'newPlayer',
+    id: 'newPlayer123',
+    position: {x: 2, y: 0.8, z: 2},
+    class: 'RANGER',
+    stats: {...}
+  }
+  ```
 - **playerMove**: Sent when player position changes (WASD movement)
+  ```javascript
+  {
+    type: 'playerMove',
+    id: 'client123',
+    position: {x: 3.5, y: 0.8, z: 2.1}
+  }
+  ```
 - **playerMoved**: Received when other players move to update their position
-- **playerLeft**: Received when a player disconnects to remove them from scene
+  ```javascript
+  {
+    type: 'playerMoved',
+    id: 'player456',
+    position: {x: 3.5, y: 0.8, z: 2.1}
+  }
+  ```
+- **playerDisconnect**: Received when a player disconnects to remove them from scene
+  ```javascript
+  {
+    type: 'playerDisconnect',
+    id: 'player789'
+  }
+  ```
 - **playerAttack**: Sent when player performs an attack with target and damage data
   ```javascript
   {
-    targetId: 'player123',
-    damage: 18,
-    attackType: 'Quick Shot'
+    type: 'playerAttack',
+    id: 'attacker123',
+    targetId: 'player456',
+    damage: 15,
+    attackType: 'primary'
   }
   ```
 - **playerAttacked**: Broadcast when a player attacks to show effect to all clients
   ```javascript
   {
+    type: 'playerAttacked',
     id: 'attacker123',
-    targetId: 'player123',
-    damage: 18,
-    attackType: 'Quick Shot'
+    targetId: 'player456',
+    damage: 15,
+    attackType: 'primary'
   }
   ```
-- **playerHealthChange**: Sent when player's health changes
+- **playerHealth**: Broadcast player health updates to all clients
   ```javascript
   {
-    health: 62,
+    type: 'playerHealth',
+    id: 'player456',
+    health: 65,
     maxHealth: 80,
-    damage: 18
-  }
-  ```
-- **playerHealthChanged**: Broadcast player health updates to all clients
-  ```javascript
-  {
-    id: 'player123',
-    health: 62,
-    maxHealth: 80,
-    damage: 18,
+    damage: 15,
     attackerId: 'attacker123'
   }
   ```
-- **playerDeath**: Sent when player's health reaches zero
+- **playerDeath**: Broadcast to notify all clients when a player dies
   ```javascript
   {
-    position: {x: 2, y: 0.8, z: 3}
-  }
-  ```
-- **playerDied**: Broadcast to notify all clients when a player dies
-  ```javascript
-  {
-    id: 'player123',
+    type: 'playerDeath',
+    id: 'player456',
     attackerId: 'attacker123'
   }
   ```
-- **playerRespawn**: Sent when a player respawns after death
+- **playerRespawn**: Broadcast to update all clients when a player respawns
   ```javascript
   {
+    type: 'playerRespawn',
+    id: 'player456',
     position: {x: -3, y: 0.8, z: 4},
-    health: 100
+    health: 80,
+    maxHealth: 80
   }
   ```
-- **playerRespawned**: Broadcast to update all clients when a player respawns
+- **error**: Received when an error occurs on the server
   ```javascript
   {
-    id: 'player123',
-    position: {x: -3, y: 0.8, z: 4},
-    health: 100,
-    maxHealth: 100
+    type: 'error',
+    message: 'Invalid message format'
   }
   ```
 
 ## Current Features
+
 - **3D Isometric World**: True isometric view with grid-based ground
 - **Character Selection**: Three distinct classes with different stats
 - **Real-time Multiplayer**: Players can see and interact in the same world
+  - WebSocket-based communication for reliable networking
+  - Server-side validation of player actions
+  - Efficient message handling with JSON format
+  - Robust player tracking with unique IDs
 - **Controls**: WASD for player movement, arrow keys for camera, mouse for attacks
 - **Class-Based Visuals**: Different colored models based on class choice
 - **Combat System**: Class-specific attacks with visual effects and damage
@@ -379,7 +479,7 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
   - Clockwise cooldown indicators on skill slots
   - Visual feedback with hover effects and transitions
 - **Resource System**: Class-specific mana with unique mechanics
-  - Clerk: Regenerates mana faster when standing still 
+  - Clerk: Regenerates mana faster when standing still
   - Warrior: Builds mana by landing hits on enemies
   - Ranger: Regenerates mana when not attacking for a few seconds
   - Resource-based attacks for all classes
@@ -395,13 +495,13 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
   - Full-screen death overlay with customized message
   - Countdown timer for respawn
   - Information about which player defeated you
-- **Respawn System**: 
+- **Respawn System**:
   - Automatic respawn after countdown
   - Random respawn location for balance
   - Respawn effects with particles and light
   - Health and mana restoration to maximum
   - Character reappears for all players
-- **Network Synchronization**: 
+- **Network Synchronization**:
   - Consistent game state across all clients
   - Health and mana synchronization for local player
   - Attack and damage visibility for spectators
@@ -410,54 +510,62 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
 - **Modern Development**: Vite-based development environment with component architecture
 
 ## Next Steps
-1. **Secondary and Ultimate Abilities**: Implement remaining skill slots
+
+1. **Network Optimization**: Enhance WebSocket communication efficiency
+   - Implement binary encoding for position updates to reduce bandwidth
+   - Add message compression for larger data packets
+   - Create more efficient synchronization for multiple players
+   - Implement client-side prediction with server reconciliation
+   - Add network quality indicators and adaptive update rates
+2. **Secondary and Ultimate Abilities**: Implement remaining skill slots
    - Add secondary ability for each class using the skill slots system
    - Implement ultimate abilities with longer cooldowns
    - Create unique visual effects for each ability
    - Integrate with the new mana system
-2. **Resource System Enhancement**: Expand and balance the mana system
+3. **Resource System Enhancement**: Expand and balance the mana system
    - Fine-tune mana costs and regeneration rates
    - Add resource-based gameplay mechanics
    - Implement mana potions or pickup items
    - Create visual effects for mana-intensive abilities
-3. **Combat Balancing**: Adjust damage, health, and cooldowns for balanced gameplay
+4. **Combat Balancing**: Adjust damage, health, and cooldowns for balanced gameplay
    - Balance mana costs vs. damage output
    - Adjust health and mana pools for different classes
    - Implement diminishing returns for crowd control
    - Create counter-play opportunities between classes
-4. **Environment Interaction**: Add obstacles, terrain effects, and interactive elements
+5. **Environment Interaction**: Add obstacles, terrain effects, and interactive elements
    - Destructible objects that provide temporary cover
    - Health and mana pickups and buff zones
    - Hazardous areas with damage over time
    - Jump pads and teleporters for mobility
-5. **Tournament System**: Implement 1v1 tournament mode with brackets
+6. **Tournament System**: Implement 1v1 tournament mode with brackets
    - Lobby system for tournament creation
    - Automatic bracket generation
    - Match spectating for eliminated players
    - Victory celebration and rewards system
-6. **Battle Royale**: Create 40-player battle royale mode with shrinking play area
+7. **Battle Royale**: Create 40-player battle royale mode with shrinking play area
    - Larger map with varied terrain
    - Shrinking safe zone with damage outside
    - Item pickups and equipment
    - Last player standing victory condition
-7. **Database Integration**: Set up player data persistence and leaderboard
+8. **Database Integration**: Set up player data persistence and leaderboard
    - Player accounts with authentication
    - Stats tracking (wins, kills, damage, mana usage)
    - Global and class-specific leaderboards
    - Achievement system for milestones
-8. **Audio System**: Add sound effects for combat, movement, and environment
+9. **Audio System**: Add sound effects for combat, movement, and environment
    - Attack and impact sounds
    - Ability and mana sound effects
    - Footsteps and movement audio
    - Ambient environmental sounds
    - Music system with combat detection
-9. **Enhanced Visuals**: Improve player models, effects, and environment
-   - Detailed character models per class
-   - Enhanced ability and resource visual effects
-   - Environment themes with unique terrain
-   - Lighting improvements and day/night cycle
+10. **Enhanced Visuals**: Improve player models, effects, and environment
+    - Detailed character models per class
+    - Enhanced ability and resource visual effects
+    - Environment themes with unique terrain
+    - Lighting improvements and day/night cycle
 
 ## Technical Notes
+
 - **Architecture**:
   - Client-server architecture with real-time communication
   - Component-based design for modularity and reusability
@@ -472,14 +580,15 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
   - ES6+ JavaScript with modular structure
 - **Backend**:
   - Node.js with Express for HTTP server
-  - Socket.io for real-time bidirectional communication
+  - Native WebSocket for real-time bidirectional communication
   - In-memory game state with future MongoDB integration
   - Server-authoritative model for combat to prevent cheating
 - **Networking**:
-  - Socket.io events for game updates and player actions
-  - Binary encoding planned for position updates (optimization)
+  - WebSocket messages for game updates and player actions
+  - JSON message format for data exchange
   - Server validation of all player actions
   - Throttled updates to reduce bandwidth usage
+  - Centralized game state management on server
 - **Combat System**:
   - Client-side prediction with server validation
   - Visual effects synchronized across all clients

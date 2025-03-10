@@ -11,7 +11,7 @@
   "keywords": [
     "game",
     "server",
-    "socket.io",
+    "websocket",
     "multiplayer"
   ],
   "author": "",
@@ -20,7 +20,8 @@
     "express": "^4.21.2",
     "mongodb": "^6.14.2",
     "mongoose": "^8.12.1",
-    "socket.io": "^4.8.1"
+    "uuid": "^9.0.1",
+    "ws": "^8.16.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"

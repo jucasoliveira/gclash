@@ -389,12 +389,10 @@ class HUD {
     const validMana = Math.max(0, Math.min(maxMana, mana));
     const percentage = Math.max(0, Math.min(100, (validMana / maxMana) * 100));
     
-    console.log(`HUD.updateMana: ${validMana}/${maxMana} (${percentage}%)`);
     
     // Update orb fill
     const manaFill = document.getElementById('mana-orb-fill');
     if (manaFill) {
-      console.log(`HUD: Setting mana orb fill to ${percentage}% (from ${manaFill.style.height})`);
       // Use important flag to ensure style takes effect
       manaFill.setAttribute('style', `height: ${percentage}% !important`);
     } else {

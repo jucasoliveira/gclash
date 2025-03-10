@@ -4,6 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Guild Clash</title>
+    <!-- Polyfill for global object needed by simple-peer -->
+    <script>
+      // Polyfills for WebRTC libraries
+      window.global = window;
+      window.process = { env: { DEBUG: undefined } };
+    </script>
+    <!-- Include simple-peer directly -->
+    <script src="https://cdn.jsdelivr.net/npm/simple-peer@9.11.1/simplepeer.min.js"></script>
+    <script>
+      // Make SimplePeer available globally
+      window.SimplePeer = SimplePeer;
+    </script>
     <style>
         body {
             margin: 0;

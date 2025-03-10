@@ -30,6 +30,7 @@ class EntityManager {
     eventBus.on('network.existingPlayers', this._boundHandleExistingPlayers);
     eventBus.on('network.playerJoined', this._boundHandlePlayerJoined);
     eventBus.on('network.playerLeft', this._boundHandlePlayerLeft);
+    eventBus.on('network.playerMoved', this._handlePlayerMoved.bind(this));
     eventBus.on('network.playerAttacked', this._handlePlayerAttacked.bind(this));
     eventBus.on('network.playerHealthChanged', this._handlePlayerHealthChanged.bind(this));
     eventBus.on('network.playerDied', this._handlePlayerDied.bind(this));
@@ -1189,6 +1190,39 @@ class EntityManager {
     });
     
     this.player = null;
+  }
+
+  /**
+   * Handle player movement from network
+   * @param {Object} data - Movement data {id, position}
+   * @private
+   */
+  _handlePlayerMoved(data) {
+    // Ignore if it's our own player (we handle our own movement)
+    if (this.player && data.id === this.player.id) {
+      return;
+    }
+    
+    // Get the entity
+    const entity = this.getEntity(data.id);
+    if (entity) {
+      // Update position
+      entity.setPosition(data.position.x, data.position.y, data.position.z);
+    } else {
+      // If entity doesn't exist yet, create it
+      console.log(`Entity not found for movement update: ${data.id}, creating placeholder`);
+      
+      // Create a placeholder entity with minimal data
+      const placeholderData = {
+        id: data.id,
+        position: data.position,
+        class: 'WARRIOR', // Default class
+        stats: CHARACTER_CLASSES.WARRIOR,
+        type: 'otherPlayer'
+      };
+      
+      this._createOtherPlayer(placeholderData);
+    }
   }
 }
 

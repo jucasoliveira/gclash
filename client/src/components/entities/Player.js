@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import Entity from './Entity.js';
 import eventBus from '../core/EventBus.js';
-import networkManager from '../network/NetworkManager.js';
+import webSocketManager from '../network/WebSocketManager.js';
 
 /**
  * Player - Represents the local player in the game
@@ -71,7 +71,7 @@ class Player extends Entity {
     this._setupEventListeners();
     
     // Register with network manager
-    networkManager.setPlayerData({
+    webSocketManager.joinGame({
       id: this.id,
       position: { 
         x: this.position.x, 
@@ -275,7 +275,7 @@ class Player extends Entity {
       this.move(deltaX, 0, deltaZ);
       
       // Send movement to server
-      networkManager.sendPlayerMove({
+      webSocketManager.updatePosition({
         x: this.position.x,
         y: this.position.y,
         z: this.position.z
@@ -482,9 +482,9 @@ class Player extends Entity {
     });
     
     // Send attack to server
-    networkManager.sendPlayerAttack({
-      targetId: targetId,
-      damage: damage,
+    webSocketManager.sendAttack({
+      targetId,
+      damage,
       attackType: this.primaryAttack.name
     });
     
@@ -631,7 +631,7 @@ class Player extends Entity {
     // Only send health update to server if this damage wasn't already from the network
     // This prevents feedback loops where A tells B tells A tells B...
     if (!fromNetwork) {
-      networkManager.sendPlayerHealthChange({
+      webSocketManager.updateHealth({
         health: this.health,
         maxHealth: this.stats.health,
         damage: amount
@@ -690,12 +690,8 @@ class Player extends Entity {
       
       // Send death notification to server (only if not from network)
       if (!fromNetwork) {
-        networkManager.sendPlayerDeath({
-          position: {
-            x: this.position.x,
-            y: this.position.y,
-            z: this.position.z
-          }
+        webSocketManager.sendDeath({
+          attackerId: this.lastAttackerId
         });
       }
       
@@ -1060,7 +1056,7 @@ class Player extends Entity {
     // CRITICAL: Send respawn notification to server with explicit health
     console.log(`RESPAWN: Sending respawn data to server: health=${this.health}, pos=(${this.position.x}, ${this.position.y}, ${this.position.z})`);
     
-    networkManager.sendPlayerRespawn({
+    webSocketManager.sendRespawn({
       position: {
         x: this.position.x,
         y: this.position.y,
