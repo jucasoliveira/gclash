@@ -193,6 +193,14 @@ class NetworkManager {
       
       // Emit the event for the EntityManager to handle
       eventBus.emit('network.playerHealthChanged', healthData);
+      
+      // Only update the HUD for the local player's health
+      if (this.socket && this.socket.id === healthData.id) {
+        eventBus.emit('player.healthChanged', {
+          health: healthData.health,
+          maxHealth: healthData.maxHealth
+        });
+      }
     });
     
     this.socket.on('playerDied', (deathData) => {

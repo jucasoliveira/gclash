@@ -134,7 +134,7 @@
             display: block;
         }
         
-        /* In-game UI */
+        /* In-game UI (old UI - now hidden) */
         .game-ui {
             position: absolute;
             top: 10px;
@@ -143,10 +143,12 @@
             padding: 10px;
             border-radius: 5px;
             display: none;
+            /* Hide the old UI completely */
+            visibility: hidden;
         }
         
         .game-ui.visible {
-            display: block;
+            display: none; /* Keep it hidden even when visible class is added */
         }
         
         .health-bar {

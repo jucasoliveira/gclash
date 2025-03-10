@@ -4,6 +4,7 @@ import inputManager from '../controls/InputManager.js';
 import networkManager from '../network/NetworkManager.js';
 import entityManager from '../entities/EntityManager.js';
 import grid from '../world/Grid.js';
+import uiManager from '../ui/UIManager.js';
 import CHARACTER_CLASSES from '../../config/classes.js';
 
 /**
@@ -41,6 +42,7 @@ class Game {
     entityManager.init();
     grid.init();
     networkManager.configure();
+    uiManager.init();
     
     // Set up UI event listeners
     this._setupUIEvents();
@@ -216,11 +218,19 @@ class Game {
    * @private
    */
   _showGameUI() {
+    // We're transitioning away from the old UI, but we'll keep the function
+    // for compatibility. Now we primarily use the HUD system.
+    
+    // Show the new HUD with health and mana orbs
+    uiManager.showHUD();
+    
+    // The code below maintains compatibility with the old UI system,
+    // but the elements are now hidden via CSS
     const gameUI = document.getElementById('game-ui');
     if (gameUI) {
       gameUI.classList.add('visible');
       
-      // Update UI with player stats
+      // Update UI with player stats (for compatibility)
       const playerClass = document.getElementById('player-class');
       const playerStats = document.getElementById('player-stats');
       const playerColor = document.getElementById('player-color');
@@ -282,6 +292,12 @@ class Game {
       // Create player with selected class and store reference
       this.player = entityManager.createPlayer(this.selectedClass);
       
+      // Set player ID in the HUD
+      if (this.player && uiManager.components.hud) {
+        uiManager.components.hud.id = this.player.id;
+        console.log(`Game: Set player ID in HUD: ${this.player.id}`);
+      }
+      
       // Listen for health changes on our own player
       eventBus.on(`entity.${this.player.id}.healthChanged`, (data) => {
         console.log(`Game received local player health change: ${data.health}/${data.maxHealth}`);
@@ -297,6 +313,9 @@ class Game {
       
       // Emit event
       eventBus.emit('game.started');
+      
+      // Explicitly show HUD
+      uiManager.showHUD();
     } catch (error) {
       console.error('Failed to start game:', error);
       
@@ -409,6 +428,16 @@ class Game {
     } else {
       console.warn('Game: Player stats element not found!');
     }
+    
+    // Also update the new HUD orb for synchronization
+    // Only update if we have a local player and this is for our player
+    if (this.player) {
+      eventBus.emit('player.healthChanged', {
+        id: this.player.id, // Include player ID for filtering
+        health: health,
+        maxHealth: maxHealth
+      });
+    }
   }
 
   /**
@@ -423,6 +452,7 @@ class Game {
     inputManager.dispose();
     grid.dispose();
     renderer.dispose();
+    uiManager.dispose();
     
     // Remove combat event listeners
     eventBus.off('network.playerHealthChanged');

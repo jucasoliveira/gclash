@@ -25,6 +25,18 @@ class Player extends Entity {
     this.isMoving = false;
     this.movementDirection = new THREE.Vector3();
     
+    // Add mana system
+    this.mana = 100; // Default max mana for all classes
+    this.maxMana = 100;
+    this.manaRegenRate = this.classType === 'CLERK' ? 5 : this.classType === 'WARRIOR' ? 2 : 3; // Per second
+    this.lastManaRegen = 0;
+    this.manaUsage = {
+      CLERK: { cost: 15, regenBonus: { moving: 1, standing: 3 } },
+      WARRIOR: { cost: 20, regenBonus: { onHit: 10 } },
+      RANGER: { cost: 12, regenBonus: { notAttacking: 2 } }
+    };
+    this.lastAttackTime = 0;
+    
     // Combat properties
     this.attackCooldown = 0;
     this.isAttacking = false;
@@ -75,6 +87,9 @@ class Player extends Entity {
     this.attackCooldown = 0;
     this._updateCooldownUI();
     
+    // Initialize mana to full
+    this.mana = this.maxMana;
+    
     // Make sure the game UI is visible
     const gameUI = document.getElementById('game-ui');
     if (gameUI) {
@@ -119,6 +134,9 @@ class Player extends Entity {
     if (playerStats) {
       playerStats.textContent = `Health: ${this.health}/${this.stats.health}`;
     }
+    
+    // Initialize mana UI
+    this._emitManaChange();
   }
 
   /**
@@ -282,6 +300,62 @@ class Player extends Entity {
         console.log('Attack ready!');
       }
     }
+    
+    // Mana regeneration based on class type
+    this._regenerateMana(deltaTime);
+    
+    // Send cooldown info to UI system
+    eventBus.emit('player.cooldownUpdate', {
+      skillIndex: 0,
+      remainingTime: this.attackCooldown,
+      totalTime: this.primaryAttack.cooldown
+    });
+  }
+  
+  /**
+   * Regenerate mana based on class type and state
+   * @param {number} deltaTime - Time since last update
+   * @private
+   */
+  _regenerateMana(deltaTime) {
+    // Base regeneration for all classes
+    let manaToAdd = this.manaRegenRate * deltaTime;
+    
+    // Class-specific bonus regeneration
+    if (this.classType === 'CLERK') {
+      // Clerk regenerates mana faster when standing still
+      if (!this.isMoving) {
+        manaToAdd += this.manaUsage.CLERK.regenBonus.standing * deltaTime;
+      } else {
+        manaToAdd += this.manaUsage.CLERK.regenBonus.moving * deltaTime;
+      }
+    } else if (this.classType === 'RANGER') {
+      // Ranger regenerates mana faster when not attacking
+      const timeSinceLastAttack = (Date.now() - this.lastAttackTime) / 1000;
+      if (timeSinceLastAttack > 2) { // Not attacked for 2 seconds
+        manaToAdd += this.manaUsage.RANGER.regenBonus.notAttacking * deltaTime;
+      }
+    }
+    // Note: Warrior builds mana by landing hits, handled in _executeAttack
+    
+    // Add regenerated mana
+    if (manaToAdd > 0) {
+      this.mana = Math.min(this.maxMana, this.mana + manaToAdd);
+      
+      // Update mana UI
+      this._emitManaChange();
+    }
+  }
+  
+  /**
+   * Emit mana change event
+   * @private
+   */
+  _emitManaChange() {
+    eventBus.emit('player.manaChanged', {
+      mana: this.mana,
+      maxMana: this.maxMana
+    });
   }
   
   /**
@@ -324,11 +398,25 @@ class Player extends Entity {
       return;
     }
     
+    // Check if enough mana is available
+    const manaCost = this.manaUsage[this.classType].cost;
+    if (this.mana < manaCost) {
+      console.debug(`Not enough mana: ${this.mana.toFixed(1)}/${manaCost} required`);
+      return;
+    }
+    
+    // Consume mana
+    this.mana -= manaCost;
+    this._emitManaChange();
+    
+    // Record attack time for Ranger mana regeneration
+    this.lastAttackTime = Date.now();
+    
     // Start attack cooldown (in seconds)
     this.attackCooldown = this.primaryAttack.cooldown;
     this.isAttacking = true;
     
-    console.log(`Attack executed: ${this.primaryAttack.name}, cooldown: ${this.attackCooldown}s`);
+    console.log(`Attack executed: ${this.primaryAttack.name}, cooldown: ${this.attackCooldown}s, mana used: ${manaCost}`);
     
     // Create a raycaster for target detection
     const raycaster = new THREE.Raycaster();
@@ -399,6 +487,14 @@ class Player extends Entity {
       damage: damage,
       attackType: this.primaryAttack.name
     });
+    
+    // Warrior gains mana when landing hits
+    if (this.classType === 'WARRIOR') {
+      const manaGain = this.manaUsage.WARRIOR.regenBonus.onHit;
+      this.mana = Math.min(this.maxMana, this.mana + manaGain);
+      console.log(`Warrior gained ${manaGain} mana from landing a hit. Current mana: ${this.mana.toFixed(1)}`);
+      this._emitManaChange();
+    }
   }
   
   /**
@@ -577,6 +673,13 @@ class Player extends Entity {
     if (playerStats) {
       playerStats.textContent = `Health: ${Math.round(this.health)}/${this.stats.health}`;
     }
+    
+    // Update the health orb in the new HUD
+    eventBus.emit('player.healthChanged', {
+      id: this.id, // Include player ID for filtering
+      health: this.health,
+      maxHealth: this.stats.health
+    });
     
     // Check if player died
     if (this.health <= 0) {
@@ -899,8 +1002,12 @@ class Player extends Entity {
   _respawn() {
     console.log('RESPAWN: Player respawning...');
     
-    // Reset health
+    // Reset health and mana
     this.health = this.stats.health;
+    this.mana = this.maxMana;
+    
+    // Update mana UI
+    this._emitManaChange();
     
     // CRITICAL: Direct update health display
     if (window.updateHealthUI) {
@@ -909,6 +1016,13 @@ class Player extends Entity {
     
     // Update UI through normal method as well
     this._updateHealthUI();
+    
+    // Also explicitly update the new HUD
+    eventBus.emit('player.healthChanged', {
+      id: this.id, // Include player ID for filtering
+      health: this.health,
+      maxHealth: this.stats.health
+    });
     
     // Move to a different position
     const randomX = Math.floor(Math.random() * 10) - 5;

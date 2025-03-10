@@ -1,0 +1,113 @@
+# Guild Clash .cursorrules
+# Last Updated: Based on global_rules.md
+
+# Project Structure
+root = true
+
+[*]
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+charset = utf-8
+
+# JavaScript/TypeScript Files
+[*.{js,jsx,ts,tsx}]
+indent_style = space
+indent_size = 2
+max_line_length = 100
+quote_type = single
+curly_bracket_next_line = false
+spaces_around_operators = true
+spaces_around_brackets = false
+indent_brace_style = 1tbs
+
+# HTML/CSS Files
+[*.{html,css}]
+indent_style = space
+indent_size = 2
+max_line_length = 120
+
+# Package Files
+[{package.json,package-lock.json}]
+indent_style = space
+indent_size = 2
+
+# Directory Structure
+directories = {
+  client: "Front-end code (three.js, HTML, CSS, JS)",
+  server: "Back-end code (Node.js, Express, Socket.io)",
+  dist: "Bundled front-end files (output from Vite)"
+}
+
+# File Naming Conventions
+file_naming = {
+  js_files: "camelCase",
+  assets: "kebab-case"
+}
+
+# Tech Stack Requirements
+required_dependencies = {
+  frontend: [
+    "three.js",
+    "howler.js",
+    "socket.io-client",
+    "vite",
+    "babel",
+    "eslint"
+  ],
+  backend: [
+    "express",
+    "socket.io",
+    "mongoose",
+    "jsonwebtoken"
+  ]
+}
+
+# Linting and Style
+eslint = {
+  extends: "airbnb",
+  rules: {
+    "no-console": ["error", { allow: ["warn", "error"] }],
+    "import/prefer-default-export": "off",
+    "react/jsx-filename-extension": [1, { "extensions": [".jsx", ".tsx"] }]
+  }
+}
+
+# Testing Requirements
+testing = {
+  unit: "jest",
+  coverage_threshold: 80
+}
+
+# Documentation
+jsdoc = {
+  require_returns: true,
+  require_param_description: true,
+  require_jsdoc: ["FunctionDeclaration", "ClassDeclaration", "MethodDefinition"]
+}
+
+# Version Control
+git = {
+  main_branch: "main",
+  development_branch: "dev",
+  feature_branch_prefix: "feature/",
+  commit_message_convention: "conventional-commits"
+}
+
+# Performance Guidelines
+performance = {
+  max_bundle_size: "1MB",
+  threejs_optimization: [
+    "use_instanced_meshes",
+    "implement_frustum_culling",
+    "optimize_textures"
+  ]
+}
+
+# Security Rules
+security = {
+  require_https: true,
+  validate_input: true,
+  sanitize_output: true,
+  prevent_xss: true
+} 

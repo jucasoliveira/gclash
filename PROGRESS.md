@@ -257,6 +257,42 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
   - Corrected health synchronization across multiple clients
   - Implemented proper cleanup of temporary combat effects
 
+### Step 13: Advanced HUD Implementation with Resource Systems
+- Created a new component-based UI architecture:
+  - Implemented UIManager as central manager for all UI components
+  - Developed HUD component for in-game heads-up display
+  - Established event-based communication between game systems and UI
+  - Added robust error handling and fallback mechanisms
+- Implemented modern HUD with orbs and skill slots:
+  - Added red health orb on bottom left of screen
+  - Added blue mana orb on bottom right of screen
+  - Created three skill slots between orbs for abilities
+  - Implemented clockwise cooldown indicators on skill slots
+  - Added smooth hover effects and transitions
+- Added class-specific mana system:
+  - Implemented base mana pool (100) for all character classes
+  - Designed unique mana consumption and regeneration for each class:
+    - Clerk: Regenerates mana faster when standing still
+    - Warrior: Builds mana by landing hits on enemies
+    - Ranger: Regenerates mana when not attacking for a few seconds
+  - Added mana costs for primary abilities
+  - Implemented visual feedback for mana changes
+- Enhanced combat system integration:
+  - Tied attack system to mana resources
+  - Prevented attacks when insufficient mana is available
+  - Added class-specific cost balancing
+  - Connected combat events to HUD updates
+- Improved UI synchronization and player feedback:
+  - Ensured HUD updates only for local player
+  - Added comprehensive event filtering
+  - Improved visual clarity with larger UI elements
+  - Enhanced performance with targeted DOM updates
+- Transitioned from legacy UI to new HUD system:
+  - Maintained backward compatibility with existing systems
+  - Deprecated old UI while preserving functionality
+  - Ensured smooth migration path for future development
+  - Added extensive debugging and logging
+
 ## Socket.io Events Implementation
 - **playerJoin**: Sent when player connects with player data and class
 - **existingPlayers**: Received by new players with data about all current players
@@ -336,8 +372,20 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
 - **Controls**: WASD for player movement, arrow keys for camera, mouse for attacks
 - **Class-Based Visuals**: Different colored models based on class choice
 - **Combat System**: Class-specific attacks with visual effects and damage
-- **Health System**: Health bars, damage visualization, and death mechanics
-  - In-game UI with health bar that changes color based on health percentage
+- **Advanced HUD System**: Modern game UI with resource orbs and skill slots
+  - Red health orb on the bottom left displaying player health
+  - Blue mana orb on the bottom right displaying mana resources
+  - Three skill slots between orbs for abilities
+  - Clockwise cooldown indicators on skill slots
+  - Visual feedback with hover effects and transitions
+- **Resource System**: Class-specific mana with unique mechanics
+  - Clerk: Regenerates mana faster when standing still 
+  - Warrior: Builds mana by landing hits on enemies
+  - Ranger: Regenerates mana when not attacking for a few seconds
+  - Resource-based attacks for all classes
+  - Visual feedback for resource changes
+- **Health System**: Health tracking, damage visualization, and death mechanics
+  - Health orb that depletes as player takes damage
   - Floating health bars above characters visible to all players
   - Floating damage numbers showing exact damage dealt
   - Screen flash and camera shake when taking damage
@@ -351,56 +399,62 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
   - Automatic respawn after countdown
   - Random respawn location for balance
   - Respawn effects with particles and light
-  - Health restoration to maximum
+  - Health and mana restoration to maximum
   - Character reappears for all players
 - **Network Synchronization**: 
   - Consistent game state across all clients
-  - Health synchronization between all players
+  - Health and mana synchronization for local player
   - Attack and damage visibility for spectators
   - Position interpolation for smooth movement
   - Reliable combat outcomes across the network
-- **Modern Development**: Vite-based development environment
+- **Modern Development**: Vite-based development environment with component architecture
 
 ## Next Steps
-1. **Advanced Combat**: Add secondary and ultimate abilities for each class
-   - Unique secondary abilities with medium cooldowns
-   - Powerful ultimate abilities with long cooldowns
-   - Visual effects and animations for all abilities
-   - Class-specific gameplay mechanics
-2. **Combat Balancing**: Adjust damage, health, and cooldowns for balanced gameplay
-   - Fine-tune damage values based on testing
-   - Adjust health pools for different classes
+1. **Secondary and Ultimate Abilities**: Implement remaining skill slots
+   - Add secondary ability for each class using the skill slots system
+   - Implement ultimate abilities with longer cooldowns
+   - Create unique visual effects for each ability
+   - Integrate with the new mana system
+2. **Resource System Enhancement**: Expand and balance the mana system
+   - Fine-tune mana costs and regeneration rates
+   - Add resource-based gameplay mechanics
+   - Implement mana potions or pickup items
+   - Create visual effects for mana-intensive abilities
+3. **Combat Balancing**: Adjust damage, health, and cooldowns for balanced gameplay
+   - Balance mana costs vs. damage output
+   - Adjust health and mana pools for different classes
    - Implement diminishing returns for crowd control
    - Create counter-play opportunities between classes
-3. **Environment Interaction**: Add obstacles, terrain effects, and interactive elements
+4. **Environment Interaction**: Add obstacles, terrain effects, and interactive elements
    - Destructible objects that provide temporary cover
-   - Health pickups and buff zones
+   - Health and mana pickups and buff zones
    - Hazardous areas with damage over time
    - Jump pads and teleporters for mobility
-4. **Tournament System**: Implement 1v1 tournament mode with brackets
+5. **Tournament System**: Implement 1v1 tournament mode with brackets
    - Lobby system for tournament creation
    - Automatic bracket generation
    - Match spectating for eliminated players
    - Victory celebration and rewards system
-5. **Battle Royale**: Create 40-player battle royale mode with shrinking play area
+6. **Battle Royale**: Create 40-player battle royale mode with shrinking play area
    - Larger map with varied terrain
    - Shrinking safe zone with damage outside
    - Item pickups and equipment
    - Last player standing victory condition
-6. **Database Integration**: Set up player data persistence and leaderboard
+7. **Database Integration**: Set up player data persistence and leaderboard
    - Player accounts with authentication
-   - Stats tracking (wins, kills, damage)
+   - Stats tracking (wins, kills, damage, mana usage)
    - Global and class-specific leaderboards
    - Achievement system for milestones
-7. **Audio System**: Add sound effects for combat, movement, and environment
+8. **Audio System**: Add sound effects for combat, movement, and environment
    - Attack and impact sounds
+   - Ability and mana sound effects
    - Footsteps and movement audio
    - Ambient environmental sounds
    - Music system with combat detection
-8. **Enhanced Visuals**: Improve player models, effects, and environment
+9. **Enhanced Visuals**: Improve player models, effects, and environment
    - Detailed character models per class
+   - Enhanced ability and resource visual effects
    - Environment themes with unique terrain
-   - Polish particle effects and animations
    - Lighting improvements and day/night cycle
 
 ## Technical Notes
@@ -412,6 +466,8 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
 - **Frontend**:
   - Three.js for 3D rendering and scene management
   - HTML/CSS for UI elements and game interface
+  - Component-based UI architecture with event-driven updates
+  - Modern HUD system with health/mana orbs and skill slots
   - Vite for efficient development and hot module replacement
   - ES6+ JavaScript with modular structure
 - **Backend**:
