@@ -1,0 +1,292 @@
+/* Guild Clash - Medieval UI Theme
+   A CSS file for the medieval-themed UI components used in the game.
+*/
+
+:root {
+  /* Color Variables */
+  --parchment: #e8d7b9;
+  --parchment-dark: #d8c7a9;
+  --ink: #5a3e2a;
+  --blood: #8b3a3a;
+  --blood-dark: #6e2e2e;
+  --night: #1a2e35;
+  --night-light: #2a3e45;
+  
+  /* Opacity Variables */
+  --overlay-light: rgba(255, 255, 255, 0.1);
+  --overlay-medium: rgba(0, 0, 0, 0.2);
+  --overlay-dark: rgba(0, 0, 0, 0.5);
+  
+  /* Spacing Variables */
+  --spacing-xs: 0.25rem;
+  --spacing-sm: 0.5rem;
+  --spacing-md: 1rem;
+  --spacing-lg: 1.5rem;
+  --spacing-xl: 2rem;
+  
+  /* Border Variables */
+  --border-thin: 1px;
+  --border-medium: 2px;
+  --border-thick: 4px;
+  --border-radius-sm: 0.125rem;
+  --border-radius-md: 0.25rem;
+  --border-radius-lg: 0.5rem;
+}
+
+/* Layout Components */
+.medieval-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background-color: var(--night);
+  background-blend-mode: overlay;
+  background-size: cover;
+  background-position: center;
+}
+
+.medieval-header {
+  padding: var(--spacing-md);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: var(--parchment);
+  border-bottom: var(--border-medium) solid rgba(139, 58, 58, 0.4);
+  position: relative;
+  overflow: hidden;
+}
+
+.medieval-main {
+  flex: 1;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--spacing-md);
+  width: 100%;
+}
+
+.medieval-footer {
+  padding: var(--spacing-md);
+  text-align: center;
+  font-size: 0.75rem;
+  color: rgba(232, 215, 185, 0.6);
+  background-color: rgba(26, 46, 53, 0.8);
+  border-top: 1px solid rgba(139, 58, 58, 0.2);
+}
+
+/* Parchment Texture Overlay */
+.parchment-overlay {
+  position: absolute;
+  inset: 0;
+  background-image: url(https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-rYPTnW7311wD7QpxwJN46o1aBmZYlm.png);
+  opacity: 0.2;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+/* Card Components */
+.medieval-card {
+  background-color: rgba(232, 215, 185, 0.9);
+  border: var(--border-medium) solid rgba(139, 58, 58, 0.4);
+  border-radius: var(--border-radius-sm);
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+.medieval-card-header {
+  background: linear-gradient(to right, rgba(139, 58, 58, 0.2), transparent);
+  padding: 1.25rem 1.25rem 0.5rem;
+  position: relative;
+}
+
+.medieval-card-title {
+  color: var(--blood);
+  font-size: 1.25rem;
+  font-weight: bold;
+}
+
+.medieval-card-subtitle {
+  color: var(--ink);
+  font-size: 0.875rem;
+}
+
+.medieval-card-content {
+  padding: var(--spacing-md);
+  position: relative;
+}
+
+/* Button Components */
+.medieval-button {
+  padding: 0.75rem 1.25rem;
+  background-color: var(--blood);
+  color: var(--parchment);
+  border: 1px solid rgba(139, 58, 58, 0.5);
+  border-radius: var(--border-radius-md);
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.medieval-button:hover {
+  background-color: var(--blood-dark);
+}
+
+.medieval-button:disabled {
+  background-color: rgba(139, 58, 58, 0.5);
+  cursor: not-allowed;
+}
+
+.medieval-button-secondary {
+  background-color: var(--night);
+  border: 1px solid rgba(26, 46, 53, 0.5);
+}
+
+.medieval-button-secondary:hover {
+  background-color: var(--night-light);
+}
+
+/* Selection Components */
+.medieval-option {
+  padding: 0.75rem;
+  background-color: rgba(139, 58, 58, 0.1);
+  color: var(--ink);
+  border: 1px solid rgba(139, 58, 58, 0.3);
+  border-radius: var(--border-radius-md);
+  font-weight: bold;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s;
+}
+
+.medieval-option.selected {
+  background-color: var(--blood);
+  color: var(--parchment);
+}
+
+.medieval-option-description {
+  background-color: rgba(0, 0, 0, 0.05);
+  padding: 0.75rem;
+  border-radius: var(--border-radius-md);
+  margin-top: var(--spacing-md);
+  color: var(--ink);
+  border: 1px solid rgba(139, 58, 58, 0.1);
+}
+
+/* Grid Layouts */
+.medieval-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--spacing-xl);
+}
+
+.medieval-grid-compact {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: var(--spacing-lg);
+}
+
+/* Typography */
+.medieval-title {
+  font-size: 1.875rem;
+  font-weight: bold;
+  color: var(--parchment);
+  margin-bottom: var(--spacing-sm);
+}
+
+.medieval-subtitle {
+  color: rgba(232, 215, 185, 0.7);
+}
+
+/* Form Elements */
+.medieval-input {
+  flex: 1;
+  padding: var(--spacing-sm);
+  background-color: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(139, 58, 58, 0.3);
+  border-radius: var(--border-radius-md);
+  color: var(--ink);
+}
+
+/* Avatar */
+.medieval-avatar {
+  height: 2rem;
+  width: 2rem;
+  border-radius: 50%;
+  border: 1px solid rgba(139, 58, 58, 0.5);
+  background-color: rgba(139, 58, 58, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--blood);
+  font-weight: bold;
+  font-size: 0.875rem;
+  overflow: hidden;
+}
+
+/* Utility Classes */
+.medieval-flex {
+  display: flex;
+}
+
+.medieval-flex-col {
+  display: flex;
+  flex-direction: column;
+}
+
+.medieval-gap-sm {
+  gap: var(--spacing-sm);
+}
+
+.medieval-gap-md {
+  gap: var(--spacing-md);
+}
+
+.medieval-items-center {
+  align-items: center;
+}
+
+.medieval-justify-between {
+  justify-content: space-between;
+}
+
+.medieval-text-center {
+  text-align: center;
+}
+
+.medieval-mb-sm {
+  margin-bottom: var(--spacing-sm);
+}
+
+.medieval-mb-md {
+  margin-bottom: var(--spacing-md);
+}
+
+.medieval-mb-lg {
+  margin-bottom: var(--spacing-lg);
+}
+
+.medieval-mb-xl {
+  margin-bottom: var(--spacing-xl);
+}
+
+.medieval-mt-sm {
+  margin-top: var(--spacing-sm);
+}
+
+.medieval-mt-md {
+  margin-top: var(--spacing-md);
+}
+
+/* Media Queries */
+@media (max-width: 768px) {
+  .medieval-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .medieval-card-header {
+    padding: 1rem 1rem 0.5rem;
+  }
+  
+  .medieval-card-content {
+    padding: 0.75rem;
+  }
+} 
