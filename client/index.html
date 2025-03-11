@@ -39,6 +39,113 @@
             pointer-events: auto;
         }
         
+        /* Login and Registration Forms */
+        .auth-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            background-image: url('https://images.unsplash.com/photo-1511512578047-dfb367046420?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80');
+            background-size: cover;
+            background-position: center;
+            background-blend-mode: overlay;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 200;
+        }
+        
+        .auth-container {
+            background-color: rgba(0, 0, 0, 0.8);
+            border: 2px solid #f1c40f;
+            border-radius: 10px;
+            padding: 2rem;
+            width: 400px;
+            box-shadow: 0 0 20px rgba(241, 196, 15, 0.3);
+        }
+        
+        .auth-container h1 {
+            color: #f1c40f;
+            text-align: center;
+            margin-bottom: 1.5rem;
+            font-size: 2rem;
+            text-shadow: 0 0 10px rgba(241, 196, 15, 0.5);
+        }
+        
+        .auth-form {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        
+        .form-group label {
+            font-size: 1rem;
+            color: #f1c40f;
+        }
+        
+        .form-group input {
+            padding: 0.8rem;
+            border-radius: 5px;
+            border: 1px solid rgba(241, 196, 15, 0.3);
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            font-size: 1rem;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #f1c40f;
+            box-shadow: 0 0 5px rgba(241, 196, 15, 0.5);
+        }
+        
+        .auth-button {
+            background-color: #f1c40f;
+            color: #000;
+            border: none;
+            padding: 1rem;
+            font-size: 1.1rem;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-top: 1rem;
+        }
+        
+        .auth-button:hover {
+            background-color: #f39c12;
+            transform: scale(1.02);
+        }
+        
+        .auth-switch {
+            text-align: center;
+            margin-top: 1.5rem;
+            color: #ccc;
+        }
+        
+        .auth-switch a {
+            color: #f1c40f;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        
+        .auth-switch a:hover {
+            text-decoration: underline;
+        }
+        
+        .error-message {
+            color: #e74c3c;
+            text-align: center;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+        }
+        
         /* Character Selection Menu */
         .character-selection {
             position: absolute;
@@ -325,10 +432,63 @@
     </style>
 </head>
 <body>
+    <!-- Login and Registration Screen -->
+    <div class="auth-screen" id="authScreen">
+        <div class="auth-container">
+            <!-- Login Form -->
+            <div id="loginForm">
+                <h1>Guild Clash</h1>
+                <form class="auth-form" id="loginFormElement">
+                    <div class="form-group">
+                        <label for="loginUsername">Username</label>
+                        <input type="text" id="loginUsername" name="username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="loginPassword">Password</label>
+                        <input type="password" id="loginPassword" name="password" required>
+                    </div>
+                    <button type="submit" class="auth-button">Login</button>
+                    <div class="error-message" id="loginError"></div>
+                </form>
+                <div class="auth-switch">
+                    Don't have an account? <a id="showRegister">Register</a>
+                </div>
+            </div>
+            
+            <!-- Registration Form -->
+            <div id="registerForm" style="display: none;">
+                <h1>Create Account</h1>
+                <form class="auth-form" id="registerFormElement">
+                    <div class="form-group">
+                        <label for="registerUsername">Username</label>
+                        <input type="text" id="registerUsername" name="username" required minlength="3" maxlength="50">
+                    </div>
+                    <div class="form-group">
+                        <label for="registerEmail">Email</label>
+                        <input type="email" id="registerEmail" name="email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="registerPassword">Password</label>
+                        <input type="password" id="registerPassword" name="password" required minlength="6">
+                    </div>
+                    <div class="form-group">
+                        <label for="confirmPassword">Confirm Password</label>
+                        <input type="password" id="confirmPassword" name="confirmPassword" required>
+                    </div>
+                    <button type="submit" class="auth-button">Register</button>
+                    <div class="error-message" id="registerError"></div>
+                </form>
+                <div class="auth-switch">
+                    Already have an account? <a id="showLogin">Login</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Canvas for three.js rendering -->
     <canvas id="game-canvas"></canvas>
-    
-    <!-- Character Selection Menu -->
+
+    <!-- Character Selection Screen -->
     <div class="character-selection" id="character-selection">
         <h1>Choose Your Class</h1>
         
@@ -513,5 +673,152 @@
     </script>
     
     <script type="module" src="/src/main.js"></script>
+    
+    <!-- Authentication Scripts -->
+    <script>
+        // DOM Elements
+        const authScreen = document.getElementById('authScreen');
+        const loginForm = document.getElementById('loginForm');
+        const registerForm = document.getElementById('registerForm');
+        const loginFormElement = document.getElementById('loginFormElement');
+        const registerFormElement = document.getElementById('registerFormElement');
+        const showRegisterLink = document.getElementById('showRegister');
+        const showLoginLink = document.getElementById('showLogin');
+        const loginError = document.getElementById('loginError');
+        const registerError = document.getElementById('registerError');
+        const characterSelection = document.getElementById('character-selection');
+        
+        // Toggle between login and registration forms
+        showRegisterLink.addEventListener('click', () => {
+            loginForm.style.display = 'none';
+            registerForm.style.display = 'block';
+            loginError.textContent = '';
+        });
+        
+        showLoginLink.addEventListener('click', () => {
+            registerForm.style.display = 'none';
+            loginForm.style.display = 'block';
+            registerError.textContent = '';
+        });
+        
+        // Handle login form submission
+        loginFormElement.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const username = document.getElementById('loginUsername').value;
+            const password = document.getElementById('loginPassword').value;
+            
+            try {
+                loginError.textContent = '';
+                
+                const response = await fetch('http://localhost:3000/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Login failed');
+                }
+                
+                // Store user data in localStorage
+                localStorage.setItem('guildClashUser', JSON.stringify(data));
+                
+                // Hide auth screen and show character selection
+                authScreen.style.display = 'none';
+                characterSelection.style.display = 'flex';
+                
+                // Set the player's username in the game
+                window.playerUsername = data.username;
+                
+                console.log('Login successful:', data);
+            } catch (error) {
+                console.error('Login error:', error);
+                loginError.textContent = error.message || 'Login failed. Please try again.';
+            }
+        });
+        
+        // Handle registration form submission
+        registerFormElement.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const username = document.getElementById('registerUsername').value;
+            const email = document.getElementById('registerEmail').value;
+            const password = document.getElementById('registerPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            
+            // Validate passwords match
+            if (password !== confirmPassword) {
+                registerError.textContent = 'Passwords do not match';
+                return;
+            }
+            
+            try {
+                registerError.textContent = '';
+                
+                const response = await fetch('http://localhost:3000/api/auth/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username, email, password })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    // Check for validation errors
+                    if (data.validationErrors) {
+                        const errorMessages = [];
+                        for (const field in data.validationErrors) {
+                            errorMessages.push(`${field}: ${data.validationErrors[field]}`);
+                        }
+                        throw new Error(errorMessages.join(', '));
+                    } else {
+                        throw new Error(data.error || 'Registration failed');
+                    }
+                }
+                
+                // Switch to login form after successful registration
+                registerForm.style.display = 'none';
+                loginForm.style.display = 'block';
+                
+                // Pre-fill username for convenience
+                document.getElementById('loginUsername').value = username;
+                
+                console.log('Registration successful:', data);
+            } catch (error) {
+                console.error('Registration error:', error);
+                registerError.textContent = error.message || 'Registration failed. Please try again.';
+            }
+        });
+        
+        // Check if user is already logged in
+        document.addEventListener('DOMContentLoaded', () => {
+            const userData = localStorage.getItem('guildClashUser');
+            
+            if (userData) {
+                try {
+                    const user = JSON.parse(userData);
+                    
+                    // Set the player's username in the game
+                    window.playerUsername = user.username;
+                    
+                    // Hide auth screen and show character selection
+                    authScreen.style.display = 'none';
+                    characterSelection.style.display = 'flex';
+                    
+                    console.log('User already logged in:', user);
+                } catch (error) {
+                    console.error('Error parsing user data:', error);
+                    localStorage.removeItem('guildClashUser');
+                }
+            }
+        });
+    </script>
 </body>
 </html>

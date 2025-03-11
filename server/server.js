@@ -77,9 +77,121 @@ connectMongoDB();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../client/dist')));
 
+// CORS middleware
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  
+  next();
+});
+
 // API Routes
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
+});
+
+// Authentication routes
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { username, email, password } = req.body;
+    
+    // Check if username or email already exists
+    const existingUser = await Player.findOne({ 
+      $or: [{ username }, { email }] 
+    });
+    
+    if (existingUser) {
+      return res.status(400).json({ 
+        error: 'Username or email already exists' 
+      });
+    }
+    
+    // Create new player
+    const player = new Player({
+      username,
+      email,
+      characterClass: 'CLERK' // Default class
+    });
+    
+    // Set password (this will hash it)
+    player.setPassword(password);
+    
+    // Save player
+    await player.save();
+    
+    // Return player data (without sensitive fields)
+    res.status(201).json({
+      id: player._id,
+      username: player.username,
+      email: player.email,
+      characterClass: player.characterClass,
+      tier: player.tier,
+      score: player.score
+    });
+  } catch (err) {
+    console.error('Registration error:', err);
+    
+    // Handle validation errors
+    if (err.name === 'ValidationError') {
+      const validationErrors = {};
+      
+      // Extract validation error messages
+      for (const field in err.errors) {
+        validationErrors[field] = err.errors[field].message;
+      }
+      
+      return res.status(400).json({ 
+        error: 'Validation failed', 
+        validationErrors 
+      });
+    }
+    
+    // Handle other errors
+    res.status(500).json({ error: 'Registration failed: ' + err.message });
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    
+    // Find player with username and include password and salt fields
+    const player = await Player.findOne({ username })
+      .select('+password +salt');
+    
+    // Check if player exists
+    if (!player) {
+      return res.status(401).json({ error: 'Invalid username or password' });
+    }
+    
+    // Validate password
+    if (!player.validatePassword(password)) {
+      return res.status(401).json({ error: 'Invalid username or password' });
+    }
+    
+    // Update last active timestamp
+    player.lastActive = Date.now();
+    await player.save();
+    
+    // Return player data (without sensitive fields)
+    res.json({
+      id: player._id,
+      username: player.username,
+      email: player.email,
+      characterClass: player.characterClass,
+      tier: player.tier,
+      score: player.score
+    });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Login failed' });
+  }
 });
 
 // Player routes
@@ -318,101 +430,86 @@ wss.on('connection', (ws) => {
       
       // Handle ping messages (for connection testing)
       if (data.type === 'ping') {
-        console.log(`Ping received from ${clientId}`);
-        
-        // Send pong response
-        ws.send(JSON.stringify({
-          type: 'pong',
-          timestamp: Date.now(),
-          originalTimestamp: data.timestamp
-        }));
-        
+        ws.send(JSON.stringify({ type: 'pong' }));
         return;
       }
       
-      // Update player data if this is a join message
+      // Handle join messages
       if (data.type === 'join') {
         if (data.playerData) {
           console.log('Player joined with data:', data.playerData);
           
-          // Store player data with the WebSocket connection
-          players[clientId] = {
-            ...players[clientId],
-            ...data.playerData,
-            ws: ws,
-            lastSeen: Date.now()
-          };
-          
-          // Try to save player data to database if MongoDB is connected
-          try {
-            if (mongoose.connection.readyState === 1) { // 1 = connected
-              const { username, class: characterClass } = data.playerData;
+          // Check for authentication data
+          let dbPlayer = null;
+          if (data.playerData.auth && data.playerData.auth.userId) {
+            try {
+              // Find the player in the database
+              dbPlayer = await Player.findById(data.playerData.auth.userId);
               
-              // Check if player already exists
-              let player = await Player.findOne({ username });
-              
-              if (!player) {
-                // Create new player
-                player = new Player({
-                  username,
-                  characterClass,
-                  score: 0,
-                  stats: {
-                    wins: 0,
-                    losses: 0,
-                    kills: 0,
-                    deaths: 0,
-                    damageDealt: 0,
-                    healingDone: 0,
-                    gamesPlayed: 0
-                  }
-                });
+              if (dbPlayer) {
+                console.log(`Authenticated player joined: ${dbPlayer.username} (${dbPlayer._id})`);
                 
-                await player.save();
-                console.log(`Created new player in database: ${username}`);
-              } else {
                 // Update last active timestamp
-                player.lastActive = Date.now();
-                await player.save();
-                console.log(`Updated existing player in database: ${username}`);
+                dbPlayer.lastActive = Date.now();
+                await dbPlayer.save();
+                
+                // Use database username instead of client-provided one
+                data.playerData.username = dbPlayer.username;
+                
+                // Store database ID with player data
+                players[clientId].dbPlayerId = dbPlayer._id;
+                players[clientId].authenticated = true;
+              } else {
+                console.warn(`Player with ID ${data.playerData.auth.userId} not found in database`);
               }
-              
-              // Store player database ID with connection
-              players[clientId].dbId = player._id;
+            } catch (err) {
+              console.error('Error authenticating player:', err);
             }
-          } catch (dbError) {
-            console.error('Error saving player to database:', dbError);
-            // Continue without database integration if there's an error
           }
           
-          // Get existing players to send to the new player
-          const existingPlayers = Object.entries(players)
-            .filter(([id]) => id !== clientId)
-            .map(([id, player]) => ({
-              id,
-              position: player.position,
-              class: player.class,
-              stats: player.stats,
-              type: player.type
-            }));
-            
-          console.log(`Sending ${existingPlayers.length} existing players to new player`);
+          // Store player data
+          players[clientId] = {
+            ...players[clientId],
+            username: data.playerData.username,
+            class: data.playerData.class,
+            position: data.playerData.position || { x: 0, y: 0, z: 0 },
+            health: data.playerData.health || 100,
+            maxHealth: data.playerData.maxHealth || 100,
+            authenticated: !!dbPlayer
+          };
+          
+          // Broadcast player joined to all clients
+          broadcastToOthers(clientId, {
+            type: 'player_joined',
+            player: {
+              id: clientId,
+              username: players[clientId].username,
+              class: players[clientId].class,
+              position: players[clientId].position,
+              health: players[clientId].health,
+              maxHealth: players[clientId].maxHealth
+            }
+          });
           
           // Send existing players to the new player
+          const existingPlayers = [];
+          for (const id in players) {
+            if (id !== clientId && players[id].connected) {
+              existingPlayers.push({
+                id,
+                username: players[id].username,
+                class: players[id].class,
+                position: players[id].position,
+                health: players[id].health,
+                maxHealth: players[id].maxHealth
+              });
+            }
+          }
+          
           ws.send(JSON.stringify({
-            type: 'existingPlayers',
+            type: 'existing_players',
             players: existingPlayers
           }));
-          
-          // Notify all other clients about the new player
-          broadcastToOthers(clientId, {
-            type: 'newPlayer',
-            id: clientId,
-            position: data.playerData.position,
-            class: data.playerData.class,
-            stats: data.playerData.stats,
-            type: data.playerData.type
-          });
         }
       }
       

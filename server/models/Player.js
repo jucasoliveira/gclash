@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 
 /**
  * Player Schema
@@ -12,6 +13,24 @@ const playerSchema = new mongoose.Schema({
     unique: true,
     minlength: 3,
     maxlength: 50
+  },
+  email: {
+    type: String,
+    required: true,
+    trim: true,
+    unique: true,
+    lowercase: true,
+    match: [/.+\@.+\..+/, 'Please enter a valid email address']
+  },
+  password: {
+    type: String,
+    required: true,
+    minlength: 6,
+    select: false // Don't include password in query results by default
+  },
+  salt: {
+    type: String,
+    select: false // Don't include salt in query results by default
   },
   characterClass: {
     type: String,
@@ -80,6 +99,21 @@ playerSchema.methods.updateScore = function(points) {
   }
   
   return this.save();
+};
+
+// Authentication methods
+playerSchema.methods.setPassword = function(password) {
+  this.salt = crypto.randomBytes(16).toString('hex');
+  this.password = crypto
+    .pbkdf2Sync(password, this.salt, 1000, 64, 'sha512')
+    .toString('hex');
+};
+
+playerSchema.methods.validatePassword = function(password) {
+  const hash = crypto
+    .pbkdf2Sync(password, this.salt, 1000, 64, 'sha512')
+    .toString('hex');
+  return this.password === hash;
 };
 
 // Static method to get top players

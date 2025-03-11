@@ -386,10 +386,26 @@ class WebSocketManager {
   joinGame(playerData) {
     console.log('Joining game with player data:', playerData);
     
+    // Get authentication data from localStorage
+    let authData = null;
+    try {
+      const userData = localStorage.getItem('guildClashUser');
+      if (userData) {
+        authData = JSON.parse(userData);
+        console.log('Including authentication data for user:', authData.username);
+      }
+    } catch (error) {
+      console.error('Error parsing authentication data:', error);
+    }
+    
     // Store player data
     this.playerData = {
       ...playerData,
-      id: this.playerId
+      id: this.playerId,
+      auth: authData ? {
+        userId: authData.id,
+        username: authData.username
+      } : null
     };
     
     // Send join message
