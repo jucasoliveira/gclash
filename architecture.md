@@ -17,42 +17,114 @@ This document outlines the component-based architecture for the Guild Clash clie
 ### Project Organization
 
 ```
-/client
-  /src
-    /components
-      /core
-        Game.js             # Main game controller
-        Renderer.js         # Three.js rendering
-        EventBus.js         # Central event system
-      /controls
-        InputManager.js     # Keyboard/mouse input handling
-        PlayerController.js # Translates input to player actions
-        CameraController.js # Camera movement and positioning
-      /world
-        WorldManager.js     # Manages the game world
-        Grid.js             # Grid-based terrain system
-        ObjectManager.js    # Manages in-world objects
-      /entities
-        Entity.js           # Base entity class
-        Player.js           # Player entity
-        OtherPlayer.js      # Networked player entity
-        EntityManager.js    # Manages all entities
-      /ui
-        UIManager.js        # Manages UI elements
-        CharacterSelect.js  # Character selection screen
-        GameUI.js           # In-game UI
-      /network
-        NetworkManager.js   # Socket.io communication
-        SyncManager.js      # Entity synchronization
-      /utils
-        MathUtils.js        # Math helper functions
-        AssetLoader.js      # Resource loading
-    /assets
-      # Game assets
-    /config
-      classes.js            # Character class definitions
-      settings.js           # Game settings
-    main.js                 # Entry point
+.
+├── CLAUDE.md
+├── LICENSE
+├── PROGRESS.md
+├── README-character-system.md
+├── README.md
+├── architecture.md
+├── assets
+│   ├── Nature Kit (2.1).zip
+│   ├── envmap.hdr
+│   └── kenney_tower-defense-kit.zip
+├── client
+│   ├── bun.lockb
+│   ├── components.json
+│   ├── dist
+│   │   ├── assets
+│   │   │   ├── index-DAK_ymiZ.js
+│   │   │   ├── index-DAK_ymiZ.js.map
+│   │   │   └── index-QUcXaACN.css
+│   │   ├── battle-royale-test.html
+│   │   ├── game-logo.svg
+│   │   ├── index.html
+│   │   ├── parchment-texture.svg
+│   │   └── placeholder.svg
+│   ├── index.html
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── public
+│   │   ├── battle-royale-test.html
+│   │   ├── game-logo.svg
+│   │   ├── parchment-texture.svg
+│   │   └── placeholder.svg
+│   ├── src
+│   │   ├── App.jsx
+│   │   ├── components
+│   │   │   ├── controls
+│   │   │   │   └── InputManager.js
+│   │   │   ├── core
+│   │   │   │   ├── EventBus.js
+│   │   │   │   ├── Game.js
+│   │   │   │   └── Renderer.js
+│   │   │   ├── entities
+│   │   │   │   ├── Entity.js
+│   │   │   │   ├── EntityManager.js
+│   │   │   │   ├── OtherPlayer.js
+│   │   │   │   └── Player.js
+│   │   │   ├── network
+│   │   │   │   ├── NetworkManager.js
+│   │   │   │   ├── WebRTCManager.js
+│   │   │   │   └── WebSocketManager.js
+│   │   │   ├── ui
+│   │   │   │   ├── BattleRoyaleNotification.js
+│   │   │   │   ├── HUD.js
+│   │   │   │   ├── TournamentBracket.js
+│   │   │   │   ├── UIManager.js
+│   │   │   │   └── buttton.jsx
+│   │   │   └── world
+│   │   │       ├── BattleRoyaleMap.js
+│   │   │       ├── Grid.js
+│   │   │       └── TournamentMap.js
+│   │   ├── config
+│   │   │   └── classes.js
+│   │   ├── context
+│   │   ├── game
+│   │   │   ├── GameCanvas.jsx
+│   │   │   └── GameUtils.js
+│   │   ├── lib
+│   │   │   └── utils.js
+│   │   ├── main.js
+│   │   ├── main.jsx
+│   │   ├── pages
+│   │   │   ├── CharacterSelection.jsx
+│   │   │   ├── LandingPage.jsx
+│   │   │   ├── Lobby.jsx
+│   │   │   ├── Login.jsx
+│   │   │   ├── Register.jsx
+│   │   │   └── Settings.jsx
+│   │   ├── styles
+│   │   │   ├── README.md
+│   │   │   ├── index.css
+│   │   │   └── medieval-ui.css
+│   │   ├── test
+│   │   └── webrtc-polyfills.js
+│   ├── tailwind.config.js
+│   └── vite.config.js
+├── docs
+│   ├── character-system.md
+│   ├── map-system.md
+│   ├── tournament-battle-royale-integration.md
+│   ├── tournament-system.md
+│   └── websocket-protocol.md
+├── global_rules.md
+└── server
+    ├── bun.lockb
+    ├── models
+    │   ├── BattleRoyale.js
+    │   ├── Player.js
+    │   ├── Tournament.js
+    │   ├── TournamentWinner.js
+    │   └── index.js
+    ├── package-lock.json
+    ├── package.json
+    ├── server.js
+    ├── testApi.js
+    ├── testBattleRoyaleTrigger.js
+    ├── testDb.js
+    └── utils
+        └── battleRoyaleManager.js
 ```
 
 ## Component Descriptions
