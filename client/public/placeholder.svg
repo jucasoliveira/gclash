@@ -1,0 +1,17 @@
+<svg width="1920" height="1080" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#2a3f47" stroke-width="1"/>
+    </pattern>
+    <pattern id="shield" width="100" height="100" patternUnits="userSpaceOnUse">
+      <path d="M50,10 L80,25 L80,60 C80,75 65,85 50,90 C35,85 20,75 20,60 L20,25 L50,10z" fill="none" stroke="#2a3f47" stroke-width="1" opacity="0.3"/>
+    </pattern>
+    <pattern id="sword" width="120" height="120" patternUnits="userSpaceOnUse">
+      <path d="M60,20 L70,30 L70,90 L65,100 L60,90 L55,100 L50,90 L50,30 L60,20z M50,30 L70,30 M55,35 L65,35" fill="none" stroke="#2a3f47" stroke-width="1" opacity="0.2"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="#1a2e35"/>
+  <rect width="100%" height="100%" fill="url(#grid)"/>
+  <rect width="100%" height="100%" fill="url(#shield)"/>
+  <rect width="100%" height="100%" fill="url(#sword)"/>
+</svg> 

@@ -1476,3 +1476,90 @@ Implemented a comprehensive user authentication system with the following featur
   - Class-specific abilities and skill trees
   - Character portraits and cosmetic items
   - Social features like character sharing and comparison
+
+### Step 25: Game Mode Map Integration
+
+- **Enhanced Game Mode Selection**:
+
+  - Improved the Lobby interface to properly pass game mode data to the game:
+    - Updated the `handleSelectGameMode` function to use React Router's state
+    - Added character class information to the navigation state
+    - Ensured proper data flow from Lobby to GameCanvas component
+    - Created a more robust game mode selection mechanism
+  - Enhanced game mode integration with maps:
+    - Ensured Tournament mode loads the specialized Tournament map
+    - Configured Battle Royale mode to load the Battle Royale map
+    - Maintained Standard mode with the default grid map
+    - Created a seamless transition between game modes
+
+- **Map Loading System**:
+
+  - Utilized the existing `_loadMap` method in Game.js:
+    - Properly disposed of the current map resources before loading a new map
+    - Added appropriate cleanup for each map type (grid, tournament, battle royale)
+    - Implemented map-specific initialization based on game mode
+    - Created a consistent interface for map switching
+  - Enhanced map resource management:
+    - Ensured proper cleanup of Three.js resources to prevent memory leaks
+    - Implemented proper disposal of geometries, materials, and textures
+    - Added event-based communication for map state changes
+    - Created a robust error handling system for map transitions
+
+- **GameCanvas Component Improvements**:
+
+  - Enhanced the game initialization process:
+    - Added explicit map loading before starting the game
+    - Improved error handling for map loading failures
+    - Created a more robust game state management system
+    - Added detailed logging for debugging map loading issues
+  - Improved game mode parameter handling:
+    - Extracted game mode from React Router's location state
+    - Added fallback to standard mode when no mode is specified
+    - Created proper validation for game mode parameters
+    - Enhanced compatibility with existing game systems
+
+- **Technical Implementation Details**:
+
+  - Used React Router's state for seamless data passing:
+    - Maintained game mode selection across navigation
+    - Passed character class information to ensure proper character loading
+    - Created a clean separation between UI and game logic
+    - Enhanced user experience with smoother transitions
+  - Implemented proper cleanup and initialization:
+    - Ensured maps are properly disposed before loading new ones
+    - Added comprehensive resource management
+    - Created a consistent interface for map switching
+    - Enhanced compatibility with the existing component architecture
+
+- **User Experience Improvements**:
+
+  - Created a more intuitive flow from lobby to game:
+    - Game mode selection is preserved during navigation
+    - Character information is maintained throughout the process
+    - Added proper validation to prevent invalid game states
+    - Enhanced visual feedback with game mode indicators
+  - Improved game initialization:
+    - Added explicit map loading for better reliability
+    - Created a more robust error handling system
+    - Enhanced logging for debugging purposes
+    - Improved overall stability of the game
+
+- **Benefits of the Map Integration**:
+
+  - Players can seamlessly switch between different game modes
+  - Each mode provides a unique environment tailored to its gameplay
+  - Tournament mode features a specialized arena with obstacles and walls
+  - Battle Royale mode offers a massive map with terrain features and pickups
+  - Enhanced game variety with distinct visual and gameplay experiences
+  - Improved code organization with clear separation of map implementations
+  - Created a foundation for future map-specific features
+
+- **Future Map System Enhancements**:
+  - Add more varied maps for each game mode
+  - Implement map selection within game modes
+  - Create dynamic map features that change during gameplay
+  - Add environmental effects specific to each map
+  - Implement map-specific gameplay mechanics
+  - Create more sophisticated obstacle and terrain generation
+  - Add interactive map elements like destructible objects
+  - Implement map-specific sound effects and ambient audio

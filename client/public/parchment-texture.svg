@@ -1,0 +1,10 @@
+<svg width="500" height="500" xmlns="http://www.w3.org/2000/svg">
+  <filter id="noise" x="0%" y="0%" width="100%" height="100%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="3" result="noise"/>
+    <feColorMatrix type="matrix" values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0.5 0" result="coloredNoise"/>
+    <feComposite operator="in" in="coloredNoise" in2="SourceGraphic" result="noisyImage"/>
+  </filter>
+  <rect width="100%" height="100%" fill="#e8d7b9" filter="url(#noise)"/>
+  <rect width="100%" height="100%" fill="transparent" stroke="#8b3a3a" stroke-width="1" stroke-opacity="0.1"/>
+  <path d="M0,0 L500,0 L500,500 L0,500 Z" fill="none" stroke="#5a3e2a" stroke-width="0.5" stroke-opacity="0.1" stroke-dasharray="5,5"/>
+</svg> 

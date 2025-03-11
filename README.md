@@ -149,6 +149,11 @@ Guild Clash uses a component-based architecture for better maintainability and e
 - See `CLAUDE.md` for development guidelines and coding standards
 - See `global_rules.md` for technical specifications
 - See `architecture.md` for component architecture design
+- See `docs/map-system.md` for details on the map system and game mode integration
+- See `docs/websocket-protocol.md` for WebSocket communication protocol
+- See `docs/character-system.md` for character creation and management
+- See `docs/tournament-system.md` for tournament implementation details
+- See `docs/tournament-battle-royale-integration.md` for integration between tournaments and battle royale
 
 ## Current Status
 

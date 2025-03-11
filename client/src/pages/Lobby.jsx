@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import { Shield, Trophy, Swords, LogOut, Users, User, Settings } from 'lucide-react';
 
 function Lobby() {
   const navigate = useNavigate();
@@ -53,455 +54,199 @@ function Lobby() {
   };
 
   const handleSelectGameMode = (mode) => {
-    navigate('/game', { 
-      state: { 
-        characterClass: activeCharacter.characterClass,
-        gameMode: mode === 'battle-royale' ? 'battleRoyale' : mode
-      } 
-    });
-  };
-
-  // Get class color
-  const getClassColor = () => {
-    switch (activeCharacter?.characterClass) {
-      case 'CLERK':
-        return 'blue';
-      case 'WARRIOR':
-        return 'red';
-      case 'RANGER':
-        return 'green';
-      default:
-        return '#8b3a3a';
+    console.log(`Selected game mode: ${mode}`);
+    
+    if (mode === 'tournament') {
+      // Navigate to game page with tournament mode
+      navigate('/game', { 
+        state: { 
+          gameMode: 'tournament',
+          characterClass: activeCharacter?.characterClass.toLowerCase() || 'warrior'
+        } 
+      });
+    } else if (mode === 'battleRoyale') {
+      // Navigate to game page with battle royale mode
+      navigate('/game', { 
+        state: { 
+          gameMode: 'battleRoyale',
+          characterClass: activeCharacter?.characterClass.toLowerCase() || 'warrior'
+        } 
+      });
     }
   };
 
-  // Get class name
-  const getClassName = () => {
-    switch (activeCharacter?.characterClass) {
+  // Get class color
+  const getClassColor = (characterClass) => {
+    switch (characterClass) {
       case 'CLERK':
-        return 'Clerk';
+        return 'text-blue-600';
       case 'WARRIOR':
-        return 'Warrior';
+        return 'text-red-600';
       case 'RANGER':
-        return 'Ranger';
+        return 'text-green-600';
       default:
-        return 'Unknown';
+        return 'text-[#8b3a3a]';
+    }
+  };
+
+  // Get class background color
+  const getClassBgColor = (characterClass) => {
+    switch (characterClass) {
+      case 'CLERK':
+        return 'bg-blue-600';
+      case 'WARRIOR':
+        return 'bg-red-600';
+      case 'RANGER':
+        return 'bg-green-600';
+      default:
+        return 'bg-[#8b3a3a]';
     }
   };
 
   return (
-    <div className="flex flex-col min-h-screen" style={{ 
-      backgroundColor: '#1a2e35',
-      backgroundImage: 'url(https://images.unsplash.com/photo-1511512578047-dfb367046420?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80)',
-      backgroundBlendMode: 'overlay',
-      backgroundSize: 'cover',
-      backgroundPosition: 'center'
-    }}>
-      <header style={{ 
-        padding: '1rem',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        backgroundColor: '#e8d7b9',
-        borderBottom: '2px solid rgba(139, 58, 58, 0.4)',
-        position: 'relative',
-        overflow: 'hidden'
-      }}>
+    <div className="flex flex-col min-h-screen bg-[#1a2e35] bg-blend-overlay bg-cover bg-center"
+         style={{ backgroundImage: "url('/placeholder.svg')" }}>
+      <header className="p-4 flex justify-between items-center bg-[#e8d7b9] border-b-2 border-[#8b3a3a]/40 relative overflow-hidden">
         {/* Parchment texture overlay */}
-        <div style={{ 
-          position: 'absolute',
-          inset: 0,
-          backgroundImage: 'url(https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-rYPTnW7311wD7QpxwJN46o1aBmZYlm.png)',
-          opacity: 0.2,
-          mixBlendMode: 'overlay',
-          pointerEvents: 'none'
-        }}></div>
+        <div className="absolute inset-0 opacity-20 mix-blend-overlay pointer-events-none"
+             style={{ backgroundImage: "url('/parchment-texture.svg')" }}></div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', position: 'relative' }}>
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#8b3a3a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
-          </svg>
-          <span style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#8b3a3a' }}>GUILD CLASH</span>
+        <div className="flex items-center gap-2 relative">
+          <Shield className="h-6 w-6 text-[#8b3a3a]" />
+          <span className="text-xl font-bold text-[#8b3a3a]">GUILD CLASH</span>
         </div>
-        
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', position: 'relative' }}>
+
+        <div className="flex items-center gap-4 relative">
           {activeCharacter && (
-            <div style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '0.5rem',
-              backgroundColor: 'rgba(255, 255, 255, 0.2)',
-              padding: '0.25rem 0.5rem',
-              borderRadius: '0.25rem',
-              border: `1px solid ${getClassColor()}`,
-              cursor: 'pointer'
-            }}
-            onClick={handleChangeCharacter}
-            >
-              <div style={{ 
-                height: '1.75rem', 
-                width: '1.75rem', 
-                borderRadius: '50%', 
-                backgroundColor: getClassColor(),
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'white',
-                fontWeight: 'bold',
-                fontSize: '0.75rem'
-              }}>
-                {getClassName().substring(0, 1)}
+            <div className="flex items-center gap-2 bg-[#1a2e35]/10 px-3 py-1 rounded-sm border border-[#8b3a3a]/20">
+              <div className={`h-8 w-8 rounded-full flex items-center justify-center text-white font-bold ${getClassBgColor(activeCharacter.characterClass)}`}>
+                {activeCharacter.name.charAt(0)}
               </div>
-              <div>
-                <div style={{ fontSize: '0.75rem', color: '#5a3e2a' }}>
-                  {activeCharacter.name}
-                </div>
-                <div style={{ fontSize: '0.625rem', color: getClassColor(), fontWeight: 'bold' }}>
-                  Lvl {activeCharacter.level} {getClassName()}
-                </div>
+              <div className="flex flex-col">
+                <span className="text-[#5a3e2a] text-sm font-medium">{activeCharacter.name}</span>
+                <span className={`text-xs font-medium ${getClassColor(activeCharacter.characterClass)}`}>
+                  Level {activeCharacter.level}{" "}
+                  {activeCharacter.characterClass.charAt(0) + activeCharacter.characterClass.slice(1).toLowerCase()}
+                </span>
               </div>
             </div>
           )}
-          
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <div style={{ 
-              height: '2rem', 
-              width: '2rem', 
-              borderRadius: '50%', 
-              border: '1px solid rgba(139, 58, 58, 0.5)',
-              backgroundColor: 'rgba(139, 58, 58, 0.2)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#8b3a3a',
-              fontWeight: 'bold',
-              fontSize: '0.875rem',
-              overflow: 'hidden'
-            }}>
-              {username.substring(0, 2).toUpperCase()}
-            </div>
-            <span style={{ color: '#5a3e2a' }}>{username}</span>
+
+          <div className="flex items-center gap-2">
+            <Link to="/settings">
+              <button className="text-[#8b3a3a] hover:text-[#6e2e2e] hover:bg-transparent bg-transparent p-2 rounded-full">
+                <Settings className="h-5 w-5" />
+                <span className="sr-only">Settings</span>
+              </button>
+            </Link>
+
+            <button 
+              onClick={handleChangeCharacter}
+              className="text-[#8b3a3a] hover:text-[#6e2e2e] hover:bg-transparent bg-transparent p-2 rounded-full"
+            >
+              <User className="h-5 w-5" />
+              <span className="sr-only">Characters</span>
+            </button>
+
+            <button 
+              onClick={handleLogout}
+              className="text-[#8b3a3a] hover:text-[#6e2e2e] hover:bg-transparent bg-transparent p-2 rounded-full"
+            >
+              <LogOut className="h-5 w-5" />
+              <span className="sr-only">Logout</span>
+            </button>
           </div>
-          
-          <button 
-            onClick={handleLogout}
-            style={{ 
-              backgroundColor: 'transparent',
-              border: 'none',
-              color: '#8b3a3a',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.25rem',
-              fontSize: '0.875rem'
-            }}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-              <polyline points="16 17 21 12 16 7" />
-              <line x1="21" y1="12" x2="9" y2="12" />
-            </svg>
-            Logout
-          </button>
         </div>
       </header>
 
-      <main style={{ 
-        flex: 1, 
-        maxWidth: '1200px', 
-        margin: '0 auto', 
-        padding: '2rem',
-        width: '100%' 
-      }}>
-        <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
-          <h1 style={{ fontSize: '1.875rem', fontWeight: 'bold', color: '#e8d7b9', marginBottom: '0.5rem' }}>Game Lobby</h1>
-          <p style={{ color: 'rgba(232, 215, 185, 0.7)' }}>Select a game mode to begin your adventure</p>
+      <main className="flex-1 container max-w-6xl mx-auto p-4 md:p-6 lg:p-8">
+        <div className="mb-8 text-center">
+          <h1 className="text-3xl font-bold text-[#e8d7b9] mb-2">Welcome to the Arena</h1>
+          <p className="text-[#e8d7b9]/70">Choose your battle, {username}</p>
         </div>
 
-        <div style={{ 
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-          gap: '2rem'
-        }}>
+        <div className="grid md:grid-cols-2 gap-6">
           {/* Tournament Card */}
-          <div style={{ 
-            backgroundColor: 'rgba(0, 0, 0, 0.7)',
-            borderRadius: '0.5rem',
-            overflow: 'hidden',
-            position: 'relative',
-            border: '1px solid rgba(139, 58, 58, 0.4)',
-            transition: 'transform 0.2s, box-shadow 0.2s',
-            cursor: 'pointer',
-            height: '300px',
-            display: 'flex',
-            flexDirection: 'column'
-          }}
-          onClick={() => handleSelectGameMode('tournament')}
-          onMouseOver={(e) => {
-            e.currentTarget.style.transform = 'translateY(-5px)';
-            e.currentTarget.style.boxShadow = '0 10px 20px rgba(0, 0, 0, 0.3)';
-          }}
-          onMouseOut={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = 'none';
-          }}
-          >
-            <div style={{ 
-              backgroundImage: 'url(https://images.unsplash.com/photo-1519947486511-46149fa0a254?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80)',
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-              height: '60%',
-              position: 'relative'
-            }}>
-              <div style={{ 
-                position: 'absolute',
-                inset: 0,
-                background: 'linear-gradient(to bottom, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.8))'
-              }}></div>
-              
-              <div style={{ 
-                position: 'absolute',
-                bottom: '1rem',
-                left: '1rem',
-                color: 'white',
-                fontWeight: 'bold',
-                fontSize: '1.5rem',
-                textShadow: '0 2px 4px rgba(0, 0, 0, 0.5)'
-              }}>
+          <div className="bg-[#e8d7b9] bg-opacity-90 border-2 border-[#8b3a3a]/40 shadow-lg overflow-hidden rounded-sm relative">
+            {/* Parchment texture overlay */}
+            <div className="absolute inset-0 opacity-20 mix-blend-overlay pointer-events-none"
+                 style={{ backgroundImage: "url('/parchment-texture.svg')" }}></div>
+
+            <div className="bg-gradient-to-r from-[#8b3a3a]/20 to-transparent pb-2 relative p-4">
+              <div className="flex items-center gap-2 text-[#8b3a3a] text-xl font-bold">
+                <Trophy className="h-5 w-5" />
                 Tournament
               </div>
+              <div className="text-[#5a3e2a] text-sm">16-player bracket tournament</div>
             </div>
-            
-            <div style={{ padding: '1rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
-              <div style={{ color: '#e8d7b9', marginBottom: '0.5rem' }}>
-                Compete in a 16-player tournament bracket. Win your matches to advance to the finals.
-              </div>
-              
-              <div style={{ 
-                marginTop: 'auto',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <div style={{ 
-                  backgroundColor: 'rgba(139, 58, 58, 0.2)',
-                  color: '#e8d7b9',
-                  padding: '0.25rem 0.5rem',
-                  borderRadius: '0.25rem',
-                  fontSize: '0.875rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.25rem'
-                }}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                    <circle cx="9" cy="7" r="4"></circle>
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                  </svg>
-                  {playerCount.tournament}/16 Players
-                </div>
-                
-                <div style={{ 
-                  color: '#8b3a3a',
-                  fontSize: '0.875rem',
-                  fontWeight: 'bold'
-                }}>
-                  PLAY NOW
+            <div className="pt-2 relative p-4">
+              <div className="aspect-video relative rounded-sm overflow-hidden mb-4 border border-[#8b3a3a]/30">
+                <div className="absolute inset-0 bg-cover bg-center"
+                     style={{ backgroundImage: "url('/placeholder.svg')" }}></div>
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3">
+                  <div className="flex items-center gap-2 text-[#e8d7b9]">
+                    <Users className="h-4 w-4" />
+                    <span className="text-sm">{playerCount.tournament}/16 players waiting</span>
+                  </div>
                 </div>
               </div>
+              <p className="text-[#5a3e2a] text-sm">
+                Face off in a 16-player tournament bracket. Win your matches to advance to the finals and claim glory!
+              </p>
+            </div>
+            <div className="p-4 relative">
+              <button
+                className="w-full bg-[#8b3a3a] hover:bg-[#6e2e2e] text-[#e8d7b9] border border-[#8b3a3a]/50 py-2 px-4 rounded"
+                onClick={() => handleSelectGameMode('tournament')}
+              >
+                Join Tournament
+              </button>
             </div>
           </div>
-          
+
           {/* Battle Royale Card */}
-          <div style={{ 
-            backgroundColor: 'rgba(0, 0, 0, 0.7)',
-            borderRadius: '0.5rem',
-            overflow: 'hidden',
-            position: 'relative',
-            border: '1px solid rgba(139, 58, 58, 0.4)',
-            transition: 'transform 0.2s, box-shadow 0.2s',
-            cursor: 'pointer',
-            height: '300px',
-            display: 'flex',
-            flexDirection: 'column'
-          }}
-          onClick={() => handleSelectGameMode('battle-royale')}
-          onMouseOver={(e) => {
-            e.currentTarget.style.transform = 'translateY(-5px)';
-            e.currentTarget.style.boxShadow = '0 10px 20px rgba(0, 0, 0, 0.3)';
-          }}
-          onMouseOut={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = 'none';
-          }}
-          >
-            <div style={{ 
-              backgroundImage: 'url(https://images.unsplash.com/photo-1542751371-adc38448a05e?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80)',
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-              height: '60%',
-              position: 'relative'
-            }}>
-              <div style={{ 
-                position: 'absolute',
-                inset: 0,
-                background: 'linear-gradient(to bottom, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.8))'
-              }}></div>
-              
-              <div style={{ 
-                position: 'absolute',
-                bottom: '1rem',
-                left: '1rem',
-                color: 'white',
-                fontWeight: 'bold',
-                fontSize: '1.5rem',
-                textShadow: '0 2px 4px rgba(0, 0, 0, 0.5)'
-              }}>
+          <div className="bg-[#e8d7b9] bg-opacity-90 border-2 border-[#8b3a3a]/40 shadow-lg overflow-hidden rounded-sm relative">
+            {/* Parchment texture overlay */}
+            <div className="absolute inset-0 opacity-20 mix-blend-overlay pointer-events-none"
+                 style={{ backgroundImage: "url('/parchment-texture.svg')" }}></div>
+
+            <div className="bg-gradient-to-r from-[#1a2e35]/30 to-transparent pb-2 relative p-4">
+              <div className="flex items-center gap-2 text-[#1a2e35] text-xl font-bold">
+                <Swords className="h-5 w-5" />
                 Battle Royale
               </div>
+              <div className="text-[#5a3e2a] text-sm">40-player free-for-all battle</div>
             </div>
-            
-            <div style={{ padding: '1rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
-              <div style={{ color: '#e8d7b9', marginBottom: '0.5rem' }}>
-                Enter a massive 40-player battle royale. Be the last warrior standing to win.
-              </div>
-              
-              <div style={{ 
-                marginTop: 'auto',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <div style={{ 
-                  backgroundColor: 'rgba(139, 58, 58, 0.2)',
-                  color: '#e8d7b9',
-                  padding: '0.25rem 0.5rem',
-                  borderRadius: '0.25rem',
-                  fontSize: '0.875rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.25rem'
-                }}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                    <circle cx="9" cy="7" r="4"></circle>
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                  </svg>
-                  {playerCount.battleRoyale}/40 Players
-                </div>
-                
-                <div style={{ 
-                  color: '#8b3a3a',
-                  fontSize: '0.875rem',
-                  fontWeight: 'bold'
-                }}>
-                  PLAY NOW
+            <div className="pt-2 relative p-4">
+              <div className="aspect-video relative rounded-sm overflow-hidden mb-4 border border-[#8b3a3a]/30">
+                <div className="absolute inset-0 bg-cover bg-center"
+                     style={{ backgroundImage: "url('/placeholder.svg')" }}></div>
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3">
+                  <div className="flex items-center gap-2 text-[#e8d7b9]">
+                    <Users className="h-4 w-4" />
+                    <span className="text-sm">{playerCount.battleRoyale}/40 players waiting</span>
+                  </div>
                 </div>
               </div>
+              <p className="text-[#5a3e2a] text-sm">
+                Enter a massive 40-player battle royale on a sprawling map. Be the last warrior standing to earn your
+                place on the leaderboard!
+              </p>
             </div>
-          </div>
-          
-          {/* Standard Match Card */}
-          <div style={{ 
-            backgroundColor: 'rgba(0, 0, 0, 0.7)',
-            borderRadius: '0.5rem',
-            overflow: 'hidden',
-            position: 'relative',
-            border: '1px solid rgba(139, 58, 58, 0.4)',
-            transition: 'transform 0.2s, box-shadow 0.2s',
-            cursor: 'pointer',
-            height: '300px',
-            display: 'flex',
-            flexDirection: 'column'
-          }}
-          onClick={() => handleSelectGameMode('standard')}
-          onMouseOver={(e) => {
-            e.currentTarget.style.transform = 'translateY(-5px)';
-            e.currentTarget.style.boxShadow = '0 10px 20px rgba(0, 0, 0, 0.3)';
-          }}
-          onMouseOut={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = 'none';
-          }}
-          >
-            <div style={{ 
-              backgroundImage: 'url(https://images.unsplash.com/photo-1531259683007-016a7b628fc3?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80)',
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-              height: '60%',
-              position: 'relative'
-            }}>
-              <div style={{ 
-                position: 'absolute',
-                inset: 0,
-                background: 'linear-gradient(to bottom, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.8))'
-              }}></div>
-              
-              <div style={{ 
-                position: 'absolute',
-                bottom: '1rem',
-                left: '1rem',
-                color: 'white',
-                fontWeight: 'bold',
-                fontSize: '1.5rem',
-                textShadow: '0 2px 4px rgba(0, 0, 0, 0.5)'
-              }}>
-                Standard Match
-              </div>
-            </div>
-            
-            <div style={{ padding: '1rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
-              <div style={{ color: '#e8d7b9', marginBottom: '0.5rem' }}>
-                Standard 1v1 match against an opponent of similar skill level. Perfect for practice.
-              </div>
-              
-              <div style={{ 
-                marginTop: 'auto',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <div style={{ 
-                  backgroundColor: 'rgba(139, 58, 58, 0.2)',
-                  color: '#e8d7b9',
-                  padding: '0.25rem 0.5rem',
-                  borderRadius: '0.25rem',
-                  fontSize: '0.875rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.25rem'
-                }}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                    <circle cx="9" cy="7" r="4"></circle>
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                  </svg>
-                  Always Available
-                </div>
-                
-                <div style={{ 
-                  color: '#8b3a3a',
-                  fontSize: '0.875rem',
-                  fontWeight: 'bold'
-                }}>
-                  PLAY NOW
-                </div>
-              </div>
+            <div className="p-4 relative">
+              <button
+                className="w-full bg-[#1a2e35] hover:bg-[#142228] text-[#e8d7b9] border border-[#1a2e35]/50 py-2 px-4 rounded"
+                onClick={() => handleSelectGameMode('battleRoyale')}
+              >
+                Join Battle Royale
+              </button>
             </div>
           </div>
         </div>
       </main>
 
-      <footer style={{ 
-        padding: '1rem', 
-        textAlign: 'center', 
-        color: 'rgba(255, 255, 255, 0.5)',
-        fontSize: '0.75rem'
-      }}>
-        &copy; 2025 Guild Clash. All rights reserved.
+      <footer className="p-4 text-center text-xs text-[#e8d7b9]/60 bg-[#1a2e35]/80 border-t border-[#8b3a3a]/20">
+        <p>Guild Clash &copy; {new Date().getFullYear()} | All rights reserved</p>
       </footer>
     </div>
   );

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import { Shield, LogOut, Settings, Sword, Users, Info, CircleDot } from 'lucide-react';
 
 function CharacterSelection() {
   const navigate = useNavigate();
@@ -11,11 +12,136 @@ function CharacterSelection() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [playerId, setPlayerId] = useState('');
+  const [selectedCharacter, setSelectedCharacter] = useState(null);
+
+  // Mock items data for UI display
+  const mockItems = {
+    CLERK: [
+      {
+        id: "item5",
+        name: "Arcane Staff",
+        category: "weapon",
+        rarity: "rare",
+        characteristics: {
+          damage: "18-25",
+          attackSpeed: "Slow",
+          durability: "40/40",
+        },
+        properties: [
+          { name: "Intelligence", value: "+15", isPositive: true },
+          { name: "Spell Damage", value: "+20%", isPositive: true },
+          { name: "Mana Regeneration", value: "+10%", isPositive: true },
+        ],
+        sockets: [{ filled: true, gemName: "Sapphire", effect: "+12 Cold Damage" }],
+        equipped: true,
+        requiredLevel: 22,
+        icon: "🪄",
+      },
+      {
+        id: "item6",
+        name: "Robe of Wisdom",
+        category: "armor",
+        rarity: "magic",
+        characteristics: {
+          defense: "45",
+          durability: "30/30",
+        },
+        properties: [
+          { name: "Intelligence", value: "+12", isPositive: true },
+          { name: "Maximum Mana", value: "+35", isPositive: true },
+        ],
+        sockets: [],
+        equipped: true,
+        requiredLevel: 20,
+        icon: "👘",
+      }
+    ],
+    WARRIOR: [
+      {
+        id: "item1",
+        name: "Runic Broadsword",
+        category: "weapon",
+        rarity: "rare",
+        characteristics: {
+          damage: "24-38",
+          attackSpeed: "Medium",
+          durability: "45/45",
+        },
+        properties: [
+          { name: "Strength", value: "+12", isPositive: true },
+          { name: "Attack Rating", value: "+25%", isPositive: true },
+          { name: "Critical Hit Chance", value: "+5%", isPositive: true },
+        ],
+        sockets: [{ filled: true, gemName: "Ruby", effect: "+15 Fire Damage" }, { filled: false }],
+        equipped: true,
+        requiredLevel: 25,
+        icon: "⚔️",
+      },
+      {
+        id: "item2",
+        name: "Platemail of the Bear",
+        category: "armor",
+        rarity: "magic",
+        characteristics: {
+          defense: "120",
+          durability: "60/60",
+        },
+        properties: [
+          { name: "Vitality", value: "+15", isPositive: true },
+          { name: "Physical Damage Reduction", value: "8%", isPositive: true },
+        ],
+        sockets: [{ filled: false }],
+        equipped: true,
+        requiredLevel: 30,
+        icon: "🛡️",
+      }
+    ],
+    RANGER: [
+      {
+        id: "item9",
+        name: "Composite Longbow",
+        category: "weapon",
+        rarity: "rare",
+        characteristics: {
+          damage: "15-30",
+          attackSpeed: "Fast",
+          durability: "35/35",
+        },
+        properties: [
+          { name: "Dexterity", value: "+14", isPositive: true },
+          { name: "Attack Speed", value: "+10%", isPositive: true },
+          { name: "Critical Hit Damage", value: "+25%", isPositive: true },
+        ],
+        sockets: [{ filled: true, gemName: "Emerald", effect: "+12% Critical Hit Chance" }],
+        equipped: true,
+        requiredLevel: 22,
+        icon: "🏹",
+      },
+      {
+        id: "item10",
+        name: "Studded Leather",
+        category: "armor",
+        rarity: "magic",
+        characteristics: {
+          defense: "65",
+          durability: "40/40",
+        },
+        properties: [
+          { name: "Dexterity", value: "+10", isPositive: true },
+          { name: "Movement Speed", value: "+5%", isPositive: true },
+        ],
+        sockets: [],
+        equipped: true,
+        requiredLevel: 18,
+        icon: "🧥",
+      }
+    ]
+  };
 
   const classes = [
-    { id: 'CLERK', name: 'Clerk', color: 'blue', health: 80, speed: 15, description: 'Magic user with speed and agility' },
-    { id: 'WARRIOR', name: 'Warrior', color: 'red', health: 120, speed: 8, description: 'Tank with heavy armor and strength' },
-    { id: 'RANGER', name: 'Ranger', color: 'green', health: 100, speed: 12, description: 'Balanced fighter with ranged attacks' },
+    { id: 'CLERK', name: 'Clerk', color: 'blue', health: 80, speed: 15, description: 'Magic user with speed and agility', icon: '🧙‍♂️' },
+    { id: 'WARRIOR', name: 'Warrior', color: 'red', health: 120, speed: 8, description: 'Tank with heavy armor and strength', icon: '⚔️' },
+    { id: 'RANGER', name: 'Ranger', color: 'green', health: 100, speed: 12, description: 'Balanced fighter with ranged attacks', icon: '🏹' },
   ];
 
   useEffect(() => {
@@ -53,9 +179,17 @@ function CharacterSelection() {
 
       setCharacters(data.characters || []);
       setActiveCharacterId(data.activeCharacterId);
+      
+      // If there's an active character, select it
+      if (data.activeCharacterId) {
+        const activeChar = data.characters.find(c => c._id === data.activeCharacterId);
+        if (activeChar) {
+          setSelectedCharacter(activeChar);
+        }
+      }
     } catch (error) {
       console.error('Error fetching characters:', error);
-      setError('Failed to load characters. Please try again.');
+      setError(error.message || 'Failed to fetch characters. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -74,6 +208,8 @@ function CharacterSelection() {
       setError('Please select a character class');
       return;
     }
+
+    setIsLoading(true);
 
     try {
       const response = await fetch('http://localhost:3000/api/characters', {
@@ -100,6 +236,7 @@ function CharacterSelection() {
       // If this is the first character, set it as active
       if (data.activeCharacterId) {
         setActiveCharacterId(data.activeCharacterId);
+        setSelectedCharacter(data.character);
       }
 
       // Reset form and hide it
@@ -112,12 +249,19 @@ function CharacterSelection() {
     } catch (error) {
       console.error('Error creating character:', error);
       setError(error.message || 'Failed to create character. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleSelectCharacter = async (characterId) => {
+  const handleSelectCharacter = async (character) => {
+    if (!character || isLoading) return;
+    
+    setSelectedCharacter(character);
+    setIsLoading(true);
+    
     try {
-      const response = await fetch(`http://localhost:3000/api/characters/${characterId}/activate`, {
+      const response = await fetch(`http://localhost:3000/api/characters/${character._id}/activate`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
@@ -132,15 +276,28 @@ function CharacterSelection() {
       }
 
       setActiveCharacterId(data.activeCharacterId);
+      
+      // If this is successful, we can immediately continue to lobby if desired
+      if (data.activeCharacterId === character._id) {
+        // Update UI to show this character is now active
+        const updatedCharacters = characters.map(char => ({
+          ...char,
+          isActive: char._id === character._id
+        }));
+        setCharacters(updatedCharacters);
+      }
     } catch (error) {
       console.error('Error selecting character:', error);
       setError(error.message || 'Failed to select character. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleContinueToLobby = () => {
     if (!activeCharacterId) {
       setError('Please select a character first');
+      console.log('No active character selected');
       return;
     }
 
@@ -149,6 +306,7 @@ function CharacterSelection() {
     
     if (!activeCharacter) {
       setError('Selected character not found');
+      console.log('Active character not found in characters list:', activeCharacterId, characters);
       return;
     }
 
@@ -162,376 +320,422 @@ function CharacterSelection() {
     window.playerCharacterName = activeCharacter.name;
     window.playerCharacterLevel = activeCharacter.level;
 
+    console.log('Navigating to lobby with character:', activeCharacter.name);
+    
     // Navigate to lobby
     navigate('/lobby');
   };
 
-  const getClassDetails = (classId) => {
-    return classes.find(c => c.id === classId) || {};
-  };
+  const handleDeleteCharacter = async () => {
+    if (!selectedCharacter) return;
 
-  const renderCharacterList = () => {
-    if (characters.length === 0) {
-      return (
-        <div className="empty-state">
-          <p>You don't have any characters yet.</p>
-          <button 
-            className="primary-button"
-            onClick={() => setShowCreateForm(true)}
-          >
-            Create Your First Character
-          </button>
-        </div>
-      );
+    setIsLoading(true);
+
+    try {
+      const response = await fetch(`http://localhost:3000/api/characters/${selectedCharacter._id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ playerId })
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to delete character');
+      }
+
+      // Remove the character from the list
+      setCharacters(prevChars => prevChars.filter(char => char._id !== selectedCharacter._id));
+      
+      // If the deleted character was active, clear the active character
+      if (selectedCharacter._id === activeCharacterId) {
+        setActiveCharacterId(null);
+      }
+      
+      setSelectedCharacter(null);
+    } catch (error) {
+      console.error('Error deleting character:', error);
+      setError(error.message || 'Failed to delete character. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
-
-    return (
-      <div className="character-list">
-        {characters.map(character => {
-          const classDetails = getClassDetails(character.characterClass);
-          const isActive = character._id === activeCharacterId;
-          
-          return (
-            <div 
-              key={character._id} 
-              className={`character-card ${isActive ? 'active' : ''}`}
-              onClick={() => handleSelectCharacter(character._id)}
-              style={{
-                borderColor: isActive ? classDetails.color : 'transparent',
-                backgroundColor: isActive ? `${classDetails.color}22` : 'rgba(0, 0, 0, 0.2)',
-                padding: '1rem',
-                borderRadius: '0.5rem',
-                margin: '0.5rem 0',
-                cursor: 'pointer',
-                borderWidth: '2px',
-                borderStyle: 'solid',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div>
-                  <h3 style={{ color: classDetails.color, margin: '0 0 0.5rem 0' }}>
-                    {character.name}
-                  </h3>
-                  <div style={{ display: 'flex', gap: '1rem', fontSize: '0.9rem' }}>
-                    <span>Level {character.level}</span>
-                    <span style={{ color: classDetails.color }}>{classDetails.name}</span>
-                  </div>
-                </div>
-                <div style={{ 
-                  height: '3rem', 
-                  width: '3rem', 
-                  borderRadius: '50%', 
-                  backgroundColor: classDetails.color,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: 'white',
-                  fontWeight: 'bold'
-                }}>
-                  {classDetails.name.substring(0, 1)}
-                </div>
-              </div>
-              
-              <div style={{ marginTop: '1rem', display: 'flex', gap: '1rem', fontSize: '0.8rem' }}>
-                <div>
-                  <div>Wins: {character.stats.wins}</div>
-                  <div>Kills: {character.stats.kills}</div>
-                </div>
-                <div>
-                  <div>Losses: {character.stats.losses}</div>
-                  <div>Deaths: {character.stats.deaths}</div>
-                </div>
-              </div>
-              
-              {isActive && (
-                <div style={{ 
-                  marginTop: '0.5rem', 
-                  padding: '0.25rem 0.5rem', 
-                  backgroundColor: classDetails.color, 
-                  color: 'white',
-                  borderRadius: '0.25rem',
-                  display: 'inline-block',
-                  fontSize: '0.8rem'
-                }}>
-                  Selected
-                </div>
-              )}
-            </div>
-          );
-        })}
-        
-        <button 
-          className="secondary-button"
-          onClick={() => setShowCreateForm(true)}
-          style={{
-            marginTop: '1rem',
-            padding: '0.75rem 1rem',
-            backgroundColor: 'rgba(255, 255, 255, 0.1)',
-            border: '1px dashed rgba(255, 255, 255, 0.3)',
-            borderRadius: '0.5rem',
-            color: 'white',
-            cursor: 'pointer',
-            width: '100%',
-            textAlign: 'center',
-            fontSize: '1rem'
-          }}
-        >
-          + Create New Character
-        </button>
-      </div>
-    );
   };
 
-  const renderCreateForm = () => {
-    return (
-      <div className="create-character-form">
-        <h2>Create New Character</h2>
-        <form onSubmit={handleCreateCharacter}>
-          <div className="form-group">
-            <label htmlFor="charName">Character Name</label>
-            <input
-              type="text"
-              id="charName"
-              value={newCharName}
-              onChange={(e) => setNewCharName(e.target.value)}
-              required
-              minLength={3}
-              maxLength={50}
-              placeholder="Enter character name"
-            />
-          </div>
-          
-          <div className="form-group">
-            <label>Character Class</label>
-            <div className="class-selection">
-              {classes.map(classOption => (
-                <div 
-                  key={classOption.id}
-                  className={`class-option ${newCharClass === classOption.id ? 'selected' : ''}`}
-                  onClick={() => setNewCharClass(classOption.id)}
-                  style={{
-                    padding: '1rem',
-                    borderRadius: '0.5rem',
-                    margin: '0.5rem 0',
-                    cursor: 'pointer',
-                    backgroundColor: newCharClass === classOption.id 
-                      ? `${classOption.color}22` 
-                      : 'rgba(0, 0, 0, 0.2)',
-                    borderWidth: '2px',
-                    borderStyle: 'solid',
-                    borderColor: newCharClass === classOption.id 
-                      ? classOption.color 
-                      : 'transparent',
-                    transition: 'all 0.2s ease'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                    <div style={{ 
-                      height: '2.5rem', 
-                      width: '2.5rem', 
-                      borderRadius: '50%', 
-                      backgroundColor: classOption.color,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: 'white',
-                      fontWeight: 'bold'
-                    }}>
-                      {classOption.name.substring(0, 1)}
-                    </div>
-                    <div>
-                      <h3 style={{ margin: '0 0 0.25rem 0', color: classOption.color }}>
-                        {classOption.name}
-                      </h3>
-                      <div style={{ display: 'flex', gap: '1rem', fontSize: '0.8rem' }}>
-                        <span>Health: {classOption.health}</span>
-                        <span>Speed: {classOption.speed}</span>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {newCharClass === classOption.id && (
-                    <div style={{ marginTop: '0.5rem', fontSize: '0.9rem' }}>
-                      {classOption.description}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-          
-          {error && <div className="error-message">{error}</div>}
-          
-          <div className="form-actions" style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
-            <button 
-              type="button" 
-              className="secondary-button"
-              onClick={() => {
-                setShowCreateForm(false);
-                setNewCharName('');
-                setNewCharClass('');
-                setError('');
-              }}
-              style={{
-                padding: '0.75rem 1.5rem',
-                backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                border: 'none',
-                borderRadius: '0.5rem',
-                color: 'white',
-                cursor: 'pointer',
-                flex: 1
-              }}
-            >
-              Cancel
-            </button>
-            <button 
-              type="submit" 
-              className="primary-button"
-              style={{
-                padding: '0.75rem 1.5rem',
-                backgroundColor: '#8b3a3a',
-                border: 'none',
-                borderRadius: '0.5rem',
-                color: 'white',
-                cursor: 'pointer',
-                flex: 2
-              }}
-            >
-              Create Character
-            </button>
-          </div>
-        </form>
-      </div>
-    );
+  const getClassDetails = (classId) => {
+    return classes.find(c => c.id === classId) || classes[0];
+  };
+
+  const getClassColor = (characterClass) => {
+    const classDetails = getClassDetails(characterClass);
+    switch (classDetails.color) {
+      case 'blue':
+        return 'text-blue-600';
+      case 'red':
+        return 'text-red-600';
+      case 'green':
+        return 'text-green-600';
+      default:
+        return 'text-[#8b3a3a]';
+    }
+  };
+
+  const getClassBgColor = (characterClass) => {
+    const classDetails = getClassDetails(characterClass);
+    switch (classDetails.color) {
+      case 'blue':
+        return 'bg-blue-600/20';
+      case 'red':
+        return 'bg-red-600/20';
+      case 'green':
+        return 'bg-green-600/20';
+      default:
+        return 'bg-[#8b3a3a]/20';
+    }
+  };
+
+  const getClassIcon = (characterClass) => {
+    const classDetails = getClassDetails(characterClass);
+    switch (classDetails.id) {
+      case 'CLERK':
+        return <span className="text-blue-600">🧙‍♂️</span>;
+      case 'WARRIOR':
+        return <span className="text-red-600">⚔️</span>;
+      case 'RANGER':
+        return <span className="text-green-600">🏹</span>;
+      default:
+        return <Shield className="h-5 w-5" />;
+    }
+  };
+
+  const getRarityColor = (rarity) => {
+    switch (rarity) {
+      case 'common':
+        return 'text-gray-200';
+      case 'magic':
+        return 'text-blue-400';
+      case 'rare':
+        return 'text-yellow-400';
+      case 'legendary':
+        return 'text-orange-400';
+      case 'set':
+        return 'text-green-400';
+      default:
+        return 'text-gray-200';
+    }
+  };
+
+  const getEquippedItems = () => {
+    if (!selectedCharacter) return [];
+    
+    // For the demo, return mock items based on character class
+    return mockItems[selectedCharacter.characterClass] || [];
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('guildClashUser');
+    navigate('/');
   };
 
   return (
-    <div className="flex flex-col min-h-screen" style={{ 
-      backgroundColor: '#1a2e35',
-      backgroundImage: 'url(https://images.unsplash.com/photo-1511512578047-dfb367046420?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80)',
-      backgroundBlendMode: 'overlay',
-      backgroundSize: 'cover',
-      backgroundPosition: 'center'
-    }}>
-      <header style={{ 
-        padding: '1rem',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        backgroundColor: '#e8d7b9',
-        borderBottom: '2px solid rgba(139, 58, 58, 0.4)',
-        position: 'relative',
-        overflow: 'hidden'
-      }}>
-        {/* Parchment texture overlay */}
-        <div style={{ 
-          position: 'absolute',
-          inset: 0,
-          backgroundImage: 'url(https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-rYPTnW7311wD7QpxwJN46o1aBmZYlm.png)',
-          opacity: 0.2,
-          mixBlendMode: 'overlay',
-          pointerEvents: 'none'
-        }}></div>
+    <div className="flex min-h-screen bg-[#1a2e35] bg-blend-overlay bg-cover bg-center"
+         style={{ backgroundImage: "url('/placeholder.svg')" }}>
+      {/* Left Menu */}
+      <div className="w-64 bg-[#1a2e35]/95 border-r border-[#8b3a3a]/20">
+        <div className="p-6">
+          <div className="flex items-center gap-2 mb-8">
+            <Shield className="h-8 w-8 text-[#8b3a3a]" />
+            <span className="text-xl font-bold text-[#e8d7b9]">GUILD CLASH</span>
+          </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', position: 'relative' }}>
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#8b3a3a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
-          </svg>
-          <span style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#8b3a3a' }}>GUILD CLASH</span>
+          <div className="space-y-2">
+            {[
+              { icon: <Users className="h-5 w-5" />, label: "Friends List" },
+              { icon: <Settings className="h-5 w-5" />, label: "Settings", onClick: () => navigate('/settings') },
+              { icon: <Info className="h-5 w-5" />, label: "Credits" },
+              { icon: <LogOut className="h-5 w-5" />, label: "Exit Game", onClick: handleLogout },
+            ].map((item) => (
+              <button
+                key={item.label}
+                className="w-full flex items-center gap-3 px-4 py-2 text-[#e8d7b9]/70 hover:text-[#e8d7b9] hover:bg-[#8b3a3a]/20 rounded-sm transition-colors"
+                onClick={item.onClick}
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
-        
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', position: 'relative' }}>
-          <button 
-            onClick={() => {
-              localStorage.removeItem('guildClashUser');
-              navigate('/');
-            }}
-            style={{ 
-              backgroundColor: 'transparent',
-              border: 'none',
-              color: '#8b3a3a',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.25rem',
-              fontSize: '0.875rem'
-            }}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-              <polyline points="16 17 21 12 16 7" />
-              <line x1="21" y1="12" x2="9" y2="12" />
-            </svg>
-            Logout
-          </button>
-        </div>
-      </header>
+      </div>
 
-      <main style={{ 
-        flex: 1, 
-        padding: '2rem', 
-        maxWidth: '800px', 
-        margin: '0 auto', 
-        width: '100%' 
-      }}>
-        <div style={{ 
-          backgroundColor: 'rgba(0, 0, 0, 0.7)', 
-          borderRadius: '0.5rem', 
-          padding: '2rem',
-          color: 'white'
-        }}>
-          <h1 style={{ 
-            fontSize: '1.5rem', 
-            marginBottom: '1.5rem', 
-            color: '#e8d7b9',
-            textAlign: 'center'
-          }}>
-            {showCreateForm ? 'Create Character' : 'Select Character'}
-          </h1>
-
-          {isLoading ? (
-            <div className="loading-state" style={{ textAlign: 'center', padding: '2rem' }}>
-              <div>Loading characters...</div>
-            </div>
-          ) : (
-            <>
-              {showCreateForm ? renderCreateForm() : renderCharacterList()}
-              
-              {!showCreateForm && characters.length > 0 && (
-                <div style={{ marginTop: '2rem', textAlign: 'center' }}>
-                  <button 
-                    onClick={handleContinueToLobby}
-                    style={{
-                      padding: '0.75rem 2rem',
-                      backgroundColor: '#8b3a3a',
-                      border: 'none',
-                      borderRadius: '0.5rem',
-                      color: 'white',
-                      cursor: 'pointer',
-                      fontSize: '1rem',
-                      fontWeight: 'bold'
-                    }}
-                    disabled={!activeCharacterId}
-                  >
-                    Continue to Lobby
-                  </button>
-                  {error && <div className="error-message" style={{ marginTop: '1rem', color: '#ff6b6b' }}>{error}</div>}
+      {/* Character Preview & Equipment */}
+      <div className="flex-1 relative">
+        {selectedCharacter ? (
+          <div className="absolute inset-0 flex flex-col p-6">
+            <div className="flex items-center mb-6">
+              <div className="w-24 h-24 mr-4">
+                <div className="w-full h-full flex items-center justify-center">
+                  <span className="text-6xl">
+                    {getClassDetails(selectedCharacter.characterClass).icon}
+                  </span>
                 </div>
-              )}
-            </>
-          )}
-        </div>
-      </main>
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-[#e8d7b9]">
+                  {selectedCharacter.name}
+                </h2>
+                <p className={`text-lg font-medium ${getClassColor(selectedCharacter.characterClass)}`}>
+                  Level {selectedCharacter.level}{" "}
+                  {getClassDetails(selectedCharacter.characterClass).name}
+                </p>
+              </div>
+            </div>
 
-      <footer style={{ 
-        padding: '1rem', 
-        textAlign: 'center', 
-        color: 'rgba(255, 255, 255, 0.5)',
-        fontSize: '0.75rem'
-      }}>
-        &copy; 2025 Guild Clash. All rights reserved.
-      </footer>
+            <div className="flex-1 overflow-y-auto pr-2">
+              <h3 className="text-[#e8d7b9] text-lg font-medium mb-3 border-b border-[#8b3a3a]/30 pb-1">
+                Equipped Items
+              </h3>
+
+              <div className="space-y-4">
+                {getEquippedItems().map((item) => (
+                  <div key={item.id} className="bg-[#1a2e35]/50 border border-[#8b3a3a]/30 rounded-sm p-3">
+                    <div className="flex items-center mb-2">
+                      <span className="text-2xl mr-2">{item.icon}</span>
+                      <div>
+                        <h4 className={`font-medium ${getRarityColor(item.rarity)}`}>{item.name}</h4>
+                        <p className="text-[#e8d7b9]/60 text-sm">
+                          {item.category.charAt(0).toUpperCase() + item.category.slice(1)}
+                          {item.requiredLevel > 0 && ` (Required Level: ${item.requiredLevel})`}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Characteristics */}
+                    {Object.keys(item.characteristics).length > 0 && (
+                      <div className="mb-2">
+                        <h5 className="text-[#e8d7b9]/80 text-sm font-medium mb-1">Characteristics:</h5>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                          {Object.entries(item.characteristics).map(([key, value]) => (
+                            <div key={key} className="flex justify-between">
+                              <span className="text-[#e8d7b9]/60">{key.charAt(0).toUpperCase() + key.slice(1)}:</span>
+                              <span className="text-[#e8d7b9]">{value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Properties */}
+                    {item.properties.length > 0 && (
+                      <div className="mb-2">
+                        <h5 className="text-[#e8d7b9]/80 text-sm font-medium mb-1">Properties:</h5>
+                        <div className="space-y-1">
+                          {item.properties.map((prop, index) => (
+                            <div key={index} className="text-sm">
+                              <span className={prop.isPositive ? "text-green-400" : "text-red-400"}>
+                                {prop.value} {prop.name}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Sockets */}
+                    {item.sockets.length > 0 && (
+                      <div>
+                        <h5 className="text-[#e8d7b9]/80 text-sm font-medium mb-1">Sockets ({item.sockets.length}):</h5>
+                        <div className="flex gap-2">
+                          {item.sockets.map((socket, index) => (
+                            <div
+                              key={index}
+                              className={`w-6 h-6 rounded-full flex items-center justify-center ${
+                                socket.filled ? "bg-[#8b3a3a]/50" : "bg-[#1a2e35]/70 border border-[#8b3a3a]/30"
+                              }`}
+                              title={socket.filled ? `${socket.gemName}: ${socket.effect}` : "Empty Socket"}
+                            >
+                              {socket.filled ? (
+                                <CircleDot className="h-4 w-4 text-yellow-400" />
+                              ) : (
+                                <CircleDot className="h-4 w-4 text-[#e8d7b9]/30" />
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        {item.sockets.some((s) => s.filled) && (
+                          <div className="mt-1 text-xs text-[#e8d7b9]/60">
+                            {item.sockets
+                              .filter((s) => s.filled)
+                              .map((s, i) => (
+                                <div key={i}>
+                                  <span className="text-yellow-400">{s.gemName}</span>: {s.effect}
+                                </div>
+                              ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {getEquippedItems().length === 0 && (
+                  <div className="text-center py-8 text-[#e8d7b9]/50">No items equipped</div>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-4 flex justify-center gap-4">
+              <button
+                className="border border-red-600/50 text-red-600 hover:bg-red-600/10 bg-transparent py-2 px-4 rounded"
+                onClick={handleDeleteCharacter}
+                disabled={isLoading}
+              >
+                {isLoading ? "Deleting..." : "Delete"}
+              </button>
+              <button
+                className="bg-[#8b3a3a] hover:bg-[#6e2e2e] text-[#e8d7b9] border border-[#8b3a3a]/50 py-2 px-4 rounded"
+                onClick={activeCharacterId !== selectedCharacter._id ? 
+                  () => handleSelectCharacter(selectedCharacter) : 
+                  handleContinueToLobby}
+                disabled={isLoading}
+              >
+                {activeCharacterId !== selectedCharacter._id ? "Select Character" : "Continue"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <p className="text-[#e8d7b9]/50 text-lg">Select a character to begin your journey</p>
+          </div>
+        )}
+      </div>
+
+      {/* Right Character List */}
+      <div className="w-80 bg-[#1a2e35]/95 border-l border-[#8b3a3a]/20">
+        <div className="p-4">
+          <button
+            className="w-full bg-[#8b3a3a] hover:bg-[#6e2e2e] text-[#e8d7b9] border border-[#8b3a3a]/50 py-2 px-4 rounded mb-4"
+            onClick={() => setShowCreateForm(true)}
+          >
+            Create New
+          </button>
+
+          <div className="space-y-2">
+            {characters.map((character) => (
+              <button
+                key={character._id}
+                className={`w-full text-left p-3 rounded-sm transition-colors ${
+                  selectedCharacter && selectedCharacter._id === character._id
+                    ? "bg-[#8b3a3a]/20 border border-[#8b3a3a]/50"
+                    : "hover:bg-[#8b3a3a]/10 border border-transparent"
+                }`}
+                onClick={() => handleSelectCharacter(character)}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`p-1 rounded-full ${getClassBgColor(character.characterClass)}`}>
+                    {getClassIcon(character.characterClass)}
+                  </div>
+                  <div>
+                    <div className="text-[#e8d7b9] font-medium">{character.name}</div>
+                    <div className={getClassColor(character.characterClass)}>
+                      Level {character.level} {getClassDetails(character.characterClass).name}
+                    </div>
+                  </div>
+                </div>
+              </button>
+            ))}
+
+            {characters.length === 0 && !isLoading && (
+              <div className="text-center py-8 text-[#e8d7b9]/50">
+                No characters found. Create your first character!
+              </div>
+            )}
+
+            {isLoading && (
+              <div className="text-center py-8 text-[#e8d7b9]/50">
+                Loading characters...
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Create Character Dialog */}
+      {showCreateForm && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="bg-[#e8d7b9] border-2 border-[#8b3a3a]/40 shadow-lg rounded-sm relative overflow-hidden max-w-md w-full mx-auto p-6">
+            {/* Parchment texture overlay */}
+            <div className="absolute inset-0 opacity-20 mix-blend-overlay pointer-events-none"
+                 style={{ backgroundImage: "url('/parchment-texture.svg')" }}></div>
+
+            <div className="relative">
+              <h2 className="text-2xl font-bold text-[#8b3a3a] mb-2">Create New Character</h2>
+              <p className="text-[#5a3e2a]/70 mb-4">
+                Choose a name and class for your new character
+              </p>
+            </div>
+
+            {error && (
+              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+                <span className="block sm:inline">{error}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleCreateCharacter} className="space-y-6 relative">
+              <div className="space-y-2">
+                <label htmlFor="characterName" className="block text-[#5a3e2a]">
+                  Character Name
+                </label>
+                <input
+                  id="characterName"
+                  value={newCharName}
+                  onChange={(e) => setNewCharName(e.target.value)}
+                  placeholder="Enter a name for your character"
+                  className="w-full bg-[#e8d7b9]/60 border border-[#8b3a3a]/30 text-[#5a3e2a] focus:ring-[#8b3a3a] focus:border-[#8b3a3a] p-2 rounded"
+                  required
+                  minLength={3}
+                  maxLength={50}
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                {classes.map((classOption) => (
+                  <button
+                    key={classOption.id}
+                    type="button"
+                    className={`p-4 rounded-sm border-2 text-center transition-colors ${
+                      newCharClass === classOption.id
+                        ? "bg-[#8b3a3a]/10 border-[#8b3a3a] text-[#8b3a3a]"
+                        : "border-[#8b3a3a]/30 text-[#5a3e2a] hover:bg-[#8b3a3a]/5"
+                    }`}
+                    onClick={() => setNewCharClass(classOption.id)}
+                  >
+                    <div className="text-3xl mb-2">{classOption.icon}</div>
+                    <div className="font-medium">{classOption.name}</div>
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="border-[#8b3a3a]/50 text-[#8b3a3a] hover:bg-[#8b3a3a]/10 bg-transparent py-2 px-4 rounded"
+                  onClick={() => setShowCreateForm(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="bg-[#8b3a3a] hover:bg-[#6e2e2e] text-[#e8d7b9] border border-[#8b3a3a]/50 py-2 px-4 rounded"
+                  disabled={!newCharName || !newCharClass || isLoading}
+                >
+                  {isLoading ? "Creating..." : "Create Character"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
