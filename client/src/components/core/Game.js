@@ -8,6 +8,7 @@ import uiManager from '../ui/UIManager.js';
 import CHARACTER_CLASSES from '../../config/classes.js';
 import tournamentMap from '../world/TournamentMap.js';
 import battleRoyaleMap from '../world/BattleRoyaleMap.js';
+import BattleRoyaleNotification from '../ui/BattleRoyaleNotification.js';
 
 /**
  * Game - Main game controller
@@ -33,6 +34,9 @@ class Game {
     // Event bindings
     this._boundHandleClassSelection = this._handleClassSelection.bind(this);
     this._boundHandleStartGame = this._handleStartGame.bind(this);
+    
+    // Initialize UI components
+    this.battleRoyaleNotification = null;
   }
 
   /**
@@ -68,6 +72,9 @@ class Game {
     
     // Set up event handlers for tournament events
     this._setupTournamentEventHandlers();
+    
+    // Set up battle royale event handlers
+    this._setupBattleRoyaleEventHandlers();
     
     // Set up health pickup handler
     this._setupHealthPickupHandler();
@@ -142,9 +149,23 @@ class Game {
     this.state = 'characterSelection';
     this._showCharacterSelection();
     
+    // Initialize UI components
+    this._initializeUIComponents();
+    
     this.isInitialized = true;
     
     return this;
+  }
+
+  /**
+   * Initialize UI components
+   * @private
+   */
+  _initializeUIComponents() {
+    // Initialize battle royale notification
+    this.battleRoyaleNotification = new BattleRoyaleNotification();
+    
+    // ... any other UI component initialization ...
   }
 
   /**
@@ -1601,6 +1622,41 @@ class Game {
           this._addTournamentToList(tournament);
         });
       }
+    });
+  }
+
+  /**
+   * Set up battle royale event handlers
+   * @private
+   */
+  _setupBattleRoyaleEventHandlers() {
+    console.log('Setting up battle royale event handlers');
+    
+    // Handle join battle royale request
+    eventBus.on('game.joinBattleRoyale', (data) => {
+      console.log('Join battle royale request:', data);
+      
+      if (!this.networkManager) {
+        console.error('Cannot join battle royale: Network manager not initialized');
+        return;
+      }
+      
+      // Make sure we have a character class selected
+      if (!this.selectedClass) {
+        console.warn('No character class selected. Cannot join battle royale.');
+        return;
+      }
+      
+      // Join the battle royale
+      this.networkManager.joinBattleRoyale(data.battleRoyaleId);
+    });
+    
+    // Handle battle royale joined event
+    eventBus.on('network.battleRoyaleJoined', (battleRoyale) => {
+      console.log('Joined battle royale:', battleRoyale);
+      
+      // Start the battle royale mode
+      this.startBattleRoyaleMode();
     });
   }
 }

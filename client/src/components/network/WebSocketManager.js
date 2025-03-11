@@ -598,9 +598,29 @@ class WebSocketManager {
           // Emit error event
           eventBus.emit('network.error', message);
           break;
+          
+        case 'battleRoyaleEvent':
+          console.log('Battle Royale event notification received:', message);
+          eventBus.emit('network.battleRoyaleEvent', message);
+          break;
+          
+        case 'battleRoyaleInvitation':
+          console.log('Battle Royale invitation received:', message);
+          eventBus.emit('network.battleRoyaleInvitation', message);
+          break;
+          
+        case 'battleRoyaleCreated':
+          console.log('Battle Royale created:', message);
+          eventBus.emit('network.battleRoyaleCreated', message.battleRoyale);
+          break;
+          
+        case 'battleRoyaleJoined':
+          console.log('Joined Battle Royale:', message);
+          eventBus.emit('network.battleRoyaleJoined', message.battleRoyale);
+          break;
       }
       
-      // Call any registered message handlers for this message type
+      // Call registered message handlers
       if (this.messageHandlers && this.messageHandlers[message.type]) {
         this.messageHandlers[message.type].forEach(handler => {
           try {
@@ -611,7 +631,7 @@ class WebSocketManager {
         });
       }
     } catch (error) {
-      console.error('Error processing WebSocket message:', error);
+      console.error('Error handling WebSocket message:', error);
     }
   }
   
@@ -1125,6 +1145,24 @@ class WebSocketManager {
    */
   setStatusCallback(callback) {
     this.statusCallback = callback;
+  }
+  
+  /**
+   * Join a battle royale
+   * @param {string} battleRoyaleId - The ID of the battle royale to join
+   */
+  joinBattleRoyale(battleRoyaleId) {
+    if (!this.connected || !this.socket) {
+      console.error('Cannot join battle royale: Not connected to server');
+      return;
+    }
+    
+    console.log('Joining battle royale:', battleRoyaleId);
+    
+    this.sendMessage({
+      type: 'joinBattleRoyale',
+      battleRoyaleId
+    });
   }
 }
 

@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Battle Royale Trigger Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f0f0f0;
+    }
+    h1 {
+      color: #333;
+      text-align: center;
+    }
+    .card {
+      background-color: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .button {
+      background-color: #4CAF50;
+      border: none;
+      color: white;
+      padding: 10px 20px;
+      text-align: center;
+      text-decoration: none;
+      display: inline-block;
+      font-size: 16px;
+      margin: 4px 2px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    .button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+    .button.secondary {
+      background-color: #2196F3;
+    }
+    .button.danger {
+      background-color: #f44336;
+    }
+    .status {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 4px;
+    }
+    .status.success {
+      background-color: #dff0d8;
+      color: #3c763d;
+    }
+    .status.error {
+      background-color: #f2dede;
+      color: #a94442;
+    }
+    .status.info {
+      background-color: #d9edf7;
+      color: #31708f;
+    }
+    pre {
+      background-color: #f5f5f5;
+      padding: 10px;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    .progress-container {
+      width: 100%;
+      background-color: #ddd;
+      border-radius: 4px;
+      margin: 10px 0;
+    }
+    .progress-bar {
+      height: 20px;
+      background-color: #4CAF50;
+      border-radius: 4px;
+      text-align: center;
+      line-height: 20px;
+      color: white;
+    }
+    .winner-list {
+      max-height: 200px;
+      overflow-y: auto;
+      margin-top: 10px;
+    }
+    .winner-item {
+      padding: 5px;
+      border-bottom: 1px solid #eee;
+    }
+    .winner-item:last-child {
+      border-bottom: none;
+    }
+  </style>
+</head>
+<body>
+  <h1>Battle Royale Trigger Test</h1>
+  
+  <div class="card">
+    <h2>Tournament Winners Status</h2>
+    <div id="status-container" class="status info">
+      Checking status...
+    </div>
+    <div class="progress-container">
+      <div id="progress-bar" class="progress-bar" style="width: 0%">0/40</div>
+    </div>
+    <button id="check-status" class="button secondary">Refresh Status</button>
+  </div>
+  
+  <div class="card">
+    <h2>Add Test Winners</h2>
+    <div>
+      <label for="winner-count">Number of winners to add:</label>
+      <input type="number" id="winner-count" min="1" max="40" value="1">
+      <button id="add-winners" class="button">Add Winners</button>
+    </div>
+    <div id="add-status" class="status" style="display: none;"></div>
+    <div id="winner-list" class="winner-list" style="display: none;"></div>
+  </div>
+  
+  <div class="card">
+    <h2>Trigger Battle Royale</h2>
+    <button id="trigger-battle-royale" class="button danger">Trigger Battle Royale</button>
+    <div id="trigger-status" class="status" style="display: none;"></div>
+    <pre id="battle-royale-result" style="display: none;"></pre>
+  </div>
+  
+  <script>
+    // API base URL
+    const API_BASE = '/api';
+    
+    // DOM elements
+    const statusContainer = document.getElementById('status-container');
+    const progressBar = document.getElementById('progress-bar');
+    const checkStatusBtn = document.getElementById('check-status');
+    const winnerCountInput = document.getElementById('winner-count');
+    const addWinnersBtn = document.getElementById('add-winners');
+    const addStatusDiv = document.getElementById('add-status');
+    const winnerListDiv = document.getElementById('winner-list');
+    const triggerBattleRoyaleBtn = document.getElementById('trigger-battle-royale');
+    const triggerStatusDiv = document.getElementById('trigger-status');
+    const battleRoyaleResultPre = document.getElementById('battle-royale-result');
+    
+    // Check battle royale trigger status
+    async function checkStatus() {
+      try {
+        statusContainer.className = 'status info';
+        statusContainer.textContent = 'Checking status...';
+        
+        const response = await fetch(`${API_BASE}/check-battle-royale-trigger`);
+        const data = await response.json();
+        
+        const { pendingWinners, canTrigger, requiredWinners } = data;
+        const percentage = Math.min(100, Math.round((pendingWinners / requiredWinners) * 100));
+        
+        progressBar.style.width = `${percentage}%`;
+        progressBar.textContent = `${pendingWinners}/${requiredWinners}`;
+        
+        if (canTrigger) {
+          statusContainer.className = 'status success';
+          statusContainer.textContent = `Ready to trigger Battle Royale! (${pendingWinners}/${requiredWinners} winners)`;
+          triggerBattleRoyaleBtn.disabled = false;
+        } else {
+          statusContainer.className = 'status info';
+          statusContainer.textContent = `Need more tournament winners (${pendingWinners}/${requiredWinners})`;
+          triggerBattleRoyaleBtn.disabled = pendingWinners < requiredWinners;
+        }
+      } catch (error) {
+        console.error('Error checking status:', error);
+        statusContainer.className = 'status error';
+        statusContainer.textContent = 'Error checking status. See console for details.';
+      }
+    }
+    
+    // Add test winners
+    async function addWinners() {
+      try {
+        const count = parseInt(winnerCountInput.value, 10);
+        
+        if (isNaN(count) || count < 1 || count > 40) {
+          addStatusDiv.className = 'status error';
+          addStatusDiv.textContent = 'Count must be between 1 and 40';
+          addStatusDiv.style.display = 'block';
+          return;
+        }
+        
+        addWinnersBtn.disabled = true;
+        addStatusDiv.className = 'status info';
+        addStatusDiv.textContent = `Adding ${count} test winners...`;
+        addStatusDiv.style.display = 'block';
+        winnerListDiv.style.display = 'none';
+        
+        const response = await fetch(`${API_BASE}/add-test-winners?count=${count}`, {
+          method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          addStatusDiv.className = 'status success';
+          addStatusDiv.textContent = `Added ${data.added} test winners. Total pending: ${data.pendingWinners}/40`;
+          
+          // Display winners
+          winnerListDiv.innerHTML = '';
+          data.winners.forEach(winner => {
+            const winnerItem = document.createElement('div');
+            winnerItem.className = 'winner-item';
+            winnerItem.textContent = `${winner.username} (${winner.characterClass})`;
+            winnerListDiv.appendChild(winnerItem);
+          });
+          winnerListDiv.style.display = 'block';
+          
+          // Update status
+          checkStatus();
+        } else {
+          addStatusDiv.className = 'status error';
+          addStatusDiv.textContent = data.error || 'Failed to add test winners';
+        }
+      } catch (error) {
+        console.error('Error adding winners:', error);
+        addStatusDiv.className = 'status error';
+        addStatusDiv.textContent = 'Error adding winners. See console for details.';
+      } finally {
+        addWinnersBtn.disabled = false;
+      }
+    }
+    
+    // Trigger battle royale
+    async function triggerBattleRoyale() {
+      try {
+        triggerBattleRoyaleBtn.disabled = true;
+        triggerStatusDiv.className = 'status info';
+        triggerStatusDiv.textContent = 'Triggering Battle Royale...';
+        triggerStatusDiv.style.display = 'block';
+        battleRoyaleResultPre.style.display = 'none';
+        
+        const response = await fetch(`${API_BASE}/trigger-battle-royale`, {
+          method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          triggerStatusDiv.className = 'status success';
+          triggerStatusDiv.textContent = 'Battle Royale successfully triggered!';
+          
+          // Display result
+          battleRoyaleResultPre.textContent = JSON.stringify(data, null, 2);
+          battleRoyaleResultPre.style.display = 'block';
+          
+          // Update status
+          checkStatus();
+        } else {
+          triggerStatusDiv.className = 'status error';
+          triggerStatusDiv.textContent = data.message || 'Failed to trigger Battle Royale';
+          
+          // Display error details
+          battleRoyaleResultPre.textContent = JSON.stringify(data, null, 2);
+          battleRoyaleResultPre.style.display = 'block';
+        }
+      } catch (error) {
+        console.error('Error triggering Battle Royale:', error);
+        triggerStatusDiv.className = 'status error';
+        triggerStatusDiv.textContent = 'Error triggering Battle Royale. See console for details.';
+      } finally {
+        triggerBattleRoyaleBtn.disabled = false;
+      }
+    }
+    
+    // Event listeners
+    checkStatusBtn.addEventListener('click', checkStatus);
+    addWinnersBtn.addEventListener('click', addWinners);
+    triggerBattleRoyaleBtn.addEventListener('click', triggerBattleRoyale);
+    
+    // Initial status check
+    checkStatus();
+  </script>
+</body>
+</html> 

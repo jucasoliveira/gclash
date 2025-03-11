@@ -449,16 +449,74 @@ All messages are JSON objects with a `type` field indicating the message type. A
 }
 ```
 
+#### battleRoyaleEvent
+
+```javascript
+{
+  type: 'battleRoyaleEvent',
+  data: {
+    battleRoyaleId: 'battle_royale_id',
+    name: 'Tournament Champions Battle Royale',
+    tier: 'champions',
+    playerCount: 0,
+    maxPlayers: 40,
+    startTime: '2025-03-15T14:30:00.000Z'
+  }
+}
+```
+
+#### battleRoyaleInvitation
+
+```javascript
+{
+  type: 'battleRoyaleInvitation',
+  data: {
+    battleRoyaleId: 'battle_royale_id',
+    message: 'You have been invited to join the Battle Royale as a tournament winner!',
+    name: 'Tournament Champions Battle Royale',
+    tier: 'champions',
+    startTime: '2025-03-15T14:30:00.000Z'
+  }
+}
+```
+
+#### battleRoyaleUpdated
+
+```javascript
+{
+  type: 'battleRoyaleUpdated',
+  data: {
+    battleRoyaleId: 'battle_royale_id',
+    participantCount: 25
+  }
+}
+```
+
+#### battleRoyaleStarted
+
+```javascript
+{
+  type: 'battleRoyaleStarted',
+  data: {
+    battleRoyaleId: 'battle_royale_id',
+    name: 'Tournament Champions Battle Royale',
+    tier: 'champions',
+    participants: ['player1', 'player2', '...'],
+    startTime: '2025-03-15T14:30:00.000Z'
+  }
+}
+```
+
 #### battleRoyaleJoined
 
 ```javascript
 {
   type: 'battleRoyaleJoined',
-  battleRoyale: {
+  data: {
     id: 'battle_royale_id',
     name: 'Battle Royale Name',
     playerCount: 5,
-    status: 'WAITING'
+    status: 'pending'
   }
 }
 ```
@@ -496,6 +554,8 @@ Common error messages include:
 - "Cannot join tournament: Tournament is full"
 - "Cannot join tournament: Tournament already started"
 - "Player not initialized"
+- "Battle royale not found"
+- "Failed to join battle royale"
 
 ## Best Practices
 

@@ -9,7 +9,11 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 
 // Import models
-const { Player, Tournament, BattleRoyale } = require('./models');
+const { Player } = require('./models');
+const Tournament = require('./models/Tournament');
+const TournamentWinner = require('./models/TournamentWinner');
+const BattleRoyale = require('./models/BattleRoyale');
+const BattleRoyaleManager = require('./utils/battleRoyaleManager');
 
 // Initialize Express app
 const app = express();
@@ -20,6 +24,50 @@ const wss = new WebSocket.Server({ server });
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/guildclash';
 const NODE_ENV = process.env.NODE_ENV || 'development';
+
+// Character class definitions
+const CHARACTER_CLASSES = {
+  CLERK: {
+    health: 80,
+    damage: 15,
+    speed: 0.15,
+    attackSpeed: 1.0,
+    range: 8
+  },
+  WARRIOR: {
+    health: 120,
+    damage: 20,
+    speed: 0.08,
+    attackSpeed: 1.0,
+    range: 2
+  },
+  RANGER: {
+    health: 100,
+    damage: 18,
+    speed: 0.12,
+    attackSpeed: 1.0,
+    range: 6
+  }
+};
+
+/**
+ * Get stats for a character class
+ * @param {string} characterClass - The character class (CLERK, WARRIOR, RANGER)
+ * @returns {Object} The stats for the character class
+ */
+function getClassStats(characterClass) {
+  // Normalize character class to uppercase
+  const normalizedClass = characterClass.toUpperCase();
+  
+  // Return stats for the class or default stats if class not found
+  return CHARACTER_CLASSES[normalizedClass] || {
+    health: 100,
+    damage: 10,
+    speed: 0.1,
+    attackSpeed: 1.0,
+    range: 5
+  };
+}
 
 // Connect to MongoDB
 const connectMongoDB = async () => {
@@ -93,7 +141,89 @@ app.use((req, res, next) => {
 
 // API Routes
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok' });
+  res.json({ status: 'ok', uptime: process.uptime() });
+});
+
+// API endpoint to check for battle royale triggers
+app.get('/api/check-battle-royale-trigger', async (req, res) => {
+  try {
+    const pendingCount = await BattleRoyaleManager.getPendingWinnersCount();
+    const canTrigger = await BattleRoyaleManager.checkForBattleRoyaleTrigger();
+    
+    res.json({
+      pendingWinners: pendingCount,
+      canTrigger,
+      requiredWinners: 40
+    });
+  } catch (error) {
+    console.error('Error checking battle royale trigger:', error);
+    res.status(500).json({ error: 'Failed to check battle royale trigger' });
+  }
+});
+
+// API endpoint to manually trigger a battle royale
+app.post('/api/trigger-battle-royale', async (req, res) => {
+  try {
+    const battleRoyale = await BattleRoyaleManager.checkAndTriggerBattleRoyale();
+    
+    if (battleRoyale) {
+      res.json({
+        success: true,
+        battleRoyale: {
+          id: battleRoyale._id,
+          name: battleRoyale.name,
+          participants: battleRoyale.participants.length,
+          status: battleRoyale.status
+        }
+      });
+    } else {
+      const pendingCount = await BattleRoyaleManager.getPendingWinnersCount();
+      res.status(400).json({
+        success: false,
+        message: `Not enough tournament winners (${pendingCount}/40)`,
+        pendingWinners: pendingCount
+      });
+    }
+  } catch (error) {
+    console.error('Error triggering battle royale:', error);
+    res.status(500).json({ success: false, error: 'Failed to trigger battle royale' });
+  }
+});
+
+// API endpoint to add test tournament winners
+app.post('/api/add-test-winners', async (req, res) => {
+  try {
+    const count = parseInt(req.query.count || '1', 10);
+    
+    if (isNaN(count) || count < 1 || count > 40) {
+      return res.status(400).json({ error: 'Count must be between 1 and 40' });
+    }
+    
+    const results = [];
+    
+    for (let i = 0; i < count; i++) {
+      const winner = await BattleRoyaleManager.addTestWinner({});
+      if (winner) {
+        results.push({
+          id: winner._id,
+          username: winner.username,
+          characterClass: winner.characterClass
+        });
+      }
+    }
+    
+    const pendingCount = await BattleRoyaleManager.getPendingWinnersCount();
+    
+    res.json({
+      success: true,
+      added: results.length,
+      winners: results,
+      pendingWinners: pendingCount
+    });
+  } catch (error) {
+    console.error('Error adding test winners:', error);
+    res.status(500).json({ success: false, error: 'Failed to add test winners' });
+  }
 });
 
 // Authentication routes
@@ -562,6 +692,54 @@ function updateTournamentBracket(tournamentId, matchId, winnerId) {
           await dbTournament.save();
           
           console.log(`Tournament ${tournamentId} saved to database`);
+          
+          // Save the winner to the TournamentWinner collection
+          const tournamentWinner = new TournamentWinner({
+            playerId: winner.dbId,
+            username: winner.username || winner.id,
+            characterClass: winner.characterClass,
+            tournamentId: dbTournament._id,
+            tournamentName: tournament.name,
+            tier: tournament.tier || 'ALL'
+          });
+          
+          await tournamentWinner.save();
+          console.log(`Tournament winner ${winner.username || winner.id} saved to database`);
+          
+          // Check if we have enough winners to trigger a battle royale
+          const pendingCount = await BattleRoyaleManager.getPendingWinnersCount();
+          console.log(`Current pending tournament winners: ${pendingCount}/40`);
+          
+          if (pendingCount >= 40) {
+            console.log('Triggering battle royale from tournament winners...');
+            const battleRoyale = await BattleRoyaleManager.createBattleRoyaleFromWinners();
+            
+            if (battleRoyale) {
+              console.log(`Battle Royale created: ${battleRoyale.name} (${battleRoyale._id})`);
+              
+              // Get the winners who qualified for this battle royale
+              const qualifiedWinners = await TournamentWinner.find({ 
+                battleRoyaleId: battleRoyale._id,
+                battleRoyaleStatus: 'QUALIFIED'
+              });
+              
+              // Notify players about the battle royale event
+              notifyBattleRoyaleEvent(battleRoyale, qualifiedWinners);
+              
+              // Broadcast battle royale creation to all players
+              broadcastToAll({
+                type: 'battleRoyaleCreated',
+                battleRoyale: {
+                  id: battleRoyale._id,
+                  name: battleRoyale.name,
+                  tier: battleRoyale.tier,
+                  maxPlayers: 40,
+                  playerCount: battleRoyale.participants.length,
+                  status: battleRoyale.status
+                }
+              });
+            }
+          }
         } catch (err) {
           console.error('Error saving tournament to database:', err);
         }
@@ -621,7 +799,7 @@ wss.on('connection', (ws) => {
   ws.on('message', async (message) => {
     try {
       const data = JSON.parse(message);
-      console.log('Received message:', data.type);
+      console.log(`Received message from ${clientId}:`, data.type);
       
       // Handle ping messages (for connection testing)
       if (data.type === 'ping') {
@@ -1352,6 +1530,120 @@ wss.on('connection', (ws) => {
           winner: tournament.winner
         }));
       }
+      
+      // Handle battle royale join request
+      else if (data.type === 'joinBattleRoyale') {
+        const { battleRoyaleId } = data;
+        const playerId = clientId;
+        
+        console.log(`Player ${playerId} is joining battle royale ${battleRoyaleId}`);
+        
+        try {
+          // Add player to battle royale
+          const battleRoyale = await BattleRoyale.findById(battleRoyaleId);
+          
+          if (!battleRoyale) {
+            console.error(`Battle royale ${battleRoyaleId} not found`);
+            ws.send(JSON.stringify({
+              type: 'error',
+              data: {
+                message: 'Battle royale not found'
+              }
+            }));
+            return;
+          }
+          
+          // Check if player is already in the battle royale
+          if (battleRoyale.participants.includes(playerId)) {
+            console.log(`Player ${playerId} is already in battle royale ${battleRoyaleId}`);
+            ws.send(JSON.stringify({
+              type: 'battleRoyaleJoined',
+              data: battleRoyale
+            }));
+            return;
+          }
+          
+          // Add player to battle royale
+          battleRoyale.participants.push(playerId);
+          await battleRoyale.save();
+          
+          // Notify player they've joined
+          ws.send(JSON.stringify({
+            type: 'battleRoyaleJoined',
+            data: battleRoyale
+          }));
+          
+          // Notify all clients about updated participant count
+          broadcastToAll({
+            type: 'battleRoyaleUpdated',
+            data: {
+              battleRoyaleId: battleRoyale._id,
+              participantCount: battleRoyale.participants.length
+            }
+          });
+          
+          console.log(`Player ${playerId} joined battle royale ${battleRoyaleId}`);
+          
+          // Check if battle royale is full and should start
+          if (battleRoyale.participants.length >= battleRoyale.maxParticipants) {
+            console.log(`Battle royale ${battleRoyaleId} is full, starting...`);
+            
+            // Start the battle royale
+            battleRoyale.status = 'in-progress';
+            battleRoyale.startTime = new Date();
+            await battleRoyale.save();
+            
+            // Notify all clients that battle royale has started
+            broadcastToAll({
+              type: 'battleRoyaleStarted',
+              data: battleRoyale
+            });
+          }
+        } catch (error) {
+          console.error('Error joining battle royale:', error);
+          ws.send(JSON.stringify({
+            type: 'error',
+            data: {
+              message: 'Failed to join battle royale'
+            }
+          }));
+        }
+      }
+      
+      // Handle tournament completion
+      else if (data.type === 'tournamentCompleted') {
+        console.log('Tournament completed:', data.tournamentId);
+        
+        try {
+          // Find the tournament
+          const tournament = await Tournament.findById(data.tournamentId);
+          
+          if (!tournament) {
+            console.error(`Tournament ${data.tournamentId} not found`);
+            return;
+          }
+          
+          // Update tournament status
+          tournament.status = 'completed';
+          tournament.completedAt = new Date();
+          await tournament.save();
+          
+          // Handle tournament completion (save winner, check for battle royale, etc.)
+          await handleTournamentCompletion(tournament);
+          
+          // Broadcast tournament completion to all clients
+          broadcastToAll({
+            type: 'tournamentUpdated',
+            data: {
+              tournamentId: tournament._id,
+              status: 'completed',
+              winner: data.winner
+            }
+          });
+        } catch (error) {
+          console.error('Error handling tournament completion:', error);
+        }
+      }
     } catch (error) {
       console.error('Error processing message:', error);
       ws.send(JSON.stringify({
@@ -1407,4 +1699,124 @@ function calculateDistance(pos1, pos2) {
   const dy = pos1.y - pos2.y;
   const dz = pos1.z - pos2.z;
   return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+/**
+ * Notify all clients about a battle royale event
+ * @param {Object} battleRoyale - The battle royale event data
+ */
+function notifyBattleRoyaleEvent(battleRoyale) {
+  console.log('Notifying all clients about battle royale event:', battleRoyale._id);
+  
+  broadcastToAll({
+    type: 'battleRoyaleEvent',
+    data: {
+      battleRoyaleId: battleRoyale._id,
+      name: battleRoyale.name,
+      tier: battleRoyale.tier,
+      playerCount: battleRoyale.participants.length,
+      maxPlayers: battleRoyale.maxParticipants,
+      startTime: battleRoyale.startTime
+    }
+  });
+}
+
+/**
+ * Notify tournament winners about a battle royale invitation
+ * @param {Object} battleRoyale - The battle royale event data
+ * @param {Array} winners - Array of tournament winner IDs
+ */
+function notifyBattleRoyaleInvitation(battleRoyale, winners) {
+  console.log(`Notifying ${winners.length} tournament winners about battle royale invitation`);
+  
+  winners.forEach(winnerId => {
+    const socket = wss.clients.find(c => c.id === winnerId);
+    
+    if (socket) {
+      socket.send(JSON.stringify({
+        type: 'battleRoyaleInvitation',
+        data: {
+          battleRoyaleId: battleRoyale._id,
+          message: 'You have been invited to join the Battle Royale as a tournament winner!',
+          name: battleRoyale.name,
+          tier: battleRoyale.tier,
+          startTime: battleRoyale.startTime
+        }
+      }));
+    }
+  });
+}
+
+/**
+ * Handle tournament completion
+ * @param {Object} tournament - The completed tournament
+ */
+async function handleTournamentCompletion(tournament) {
+  console.log(`Tournament ${tournament._id} completed`);
+  
+  try {
+    // Get the winner
+    const winner = tournament.participants.find(p => p.position === 1);
+    
+    if (!winner) {
+      console.error(`No winner found for tournament ${tournament._id}`);
+      return;
+    }
+    
+    console.log(`Tournament winner: ${winner.playerId}`);
+    
+    // Save winner to TournamentWinner collection
+    const tournamentWinner = new TournamentWinner({
+      playerId: winner.playerId,
+      tournamentId: tournament._id,
+      tier: tournament.tier,
+      timestamp: new Date(),
+      processed: false
+    });
+    
+    await tournamentWinner.save();
+    console.log(`Saved tournament winner to database: ${tournamentWinner._id}`);
+    
+    // Check if we have enough winners to trigger a battle royale
+    const pendingWinners = await TournamentWinner.find({ processed: false });
+    console.log(`Current pending tournament winners: ${pendingWinners.length}`);
+    
+    // If we have 40 winners, trigger a battle royale
+    if (pendingWinners.length >= 40) {
+      console.log('We have 40 tournament winners. Triggering battle royale event!');
+      
+      // Create a new battle royale
+      const battleRoyale = new BattleRoyale({
+        name: 'Tournament Champions Battle Royale',
+        tier: 'champions',
+        status: 'pending',
+        maxParticipants: 40,
+        participants: [],
+        startTime: new Date(Date.now() + (15 * 60 * 1000)), // Start in 15 minutes
+        createdAt: new Date()
+      });
+      
+      await battleRoyale.save();
+      console.log(`Created battle royale: ${battleRoyale._id}`);
+      
+      // Mark winners as processed
+      const winnerIds = pendingWinners.map(w => w.playerId);
+      await TournamentWinner.updateMany(
+        { _id: { $in: pendingWinners.map(w => w._id) } },
+        { $set: { processed: true, battleRoyaleId: battleRoyale._id } }
+      );
+      
+      // Notify all players about the battle royale event
+      notifyBattleRoyaleEvent(battleRoyale);
+      
+      // Send special invitations to the tournament winners
+      notifyBattleRoyaleInvitation(battleRoyale, winnerIds);
+    }
+    
+    // Update player stats
+    // ... existing code to update player stats ...
+    
+  } catch (error) {
+    console.error('Error handling tournament completion:', error);
+  }
 }
