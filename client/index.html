@@ -146,6 +146,46 @@
             display: block;
         }
         
+        /* Game mode selection */
+        .game-modes {
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+        
+        .game-modes h3 {
+            font-size: 1.2rem;
+            margin-bottom: 1rem;
+            color: #f1c40f;
+        }
+        
+        .mode-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+        }
+        
+        .mode-button {
+            background-color: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 0.7rem 1.5rem;
+            font-size: 1rem;
+            color: white;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .mode-button:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+        
+        .mode-button.selected {
+            border-color: #f1c40f;
+            background-color: rgba(241, 196, 15, 0.2);
+            box-shadow: 0 0 10px rgba(241, 196, 15, 0.5);
+        }
+        
         /* In-game UI (old UI - now hidden) */
         .game-ui {
             position: absolute;
@@ -291,6 +331,16 @@
     <!-- Character Selection Menu -->
     <div class="character-selection" id="character-selection">
         <h1>Choose Your Class</h1>
+        
+        <!-- Game Mode Selection -->
+        <div class="game-modes">
+            <h3>Select Game Mode</h3>
+            <div class="mode-buttons">
+                <button class="mode-button selected" id="standard-mode">Standard</button>
+                <button class="mode-button" id="tournament-mode">Tournament</button>
+            </div>
+        </div>
+        
         <div class="classes">
             <div class="character-class" id="clerk-class">
                 <div class="class-icon clerk-icon"></div>

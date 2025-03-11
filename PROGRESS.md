@@ -469,6 +469,9 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
   - Server-side validation of player actions
   - Efficient message handling with JSON format
   - Robust player tracking with unique IDs
+- **Multiple Game Maps**:
+  - Standard grid-based world for casual play
+  - Tournament arena map with walls, obstacles, and spotlights for competitive matches
 - **Controls**: WASD for player movement, arrow keys for camera, mouse for attacks
 - **Class-Based Visuals**: Different colored models based on class choice
 - **Combat System**: Class-specific attacks with visual effects and damage
@@ -605,6 +608,23 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
   - Clear component responsibilities and interfaces
   - Extensive console logging for debugging
 
+## Summary of Completed Features
+
+### Tournament Map (Step 16)
+
+Implemented a specialized 2km x 2km arena environment for competitive play with the following features:
+
+- **Arena Design**: Enclosed space with walls and strategically placed obstacles
+- **Visual Identity**: Unique circular pattern floor texture, arena lighting, and atmospheric effects
+- **Obstacles**: Various-sized boxes and box clusters scattered throughout the arena for tactical gameplay
+- **Lighting**: Corner spotlights targeting the center and ambient light with blueish tint
+- **Game Mode Selection**: UI for toggling between standard and tournament modes
+- **Map Switching**: Dynamic loading of different maps based on game mode selection
+- **Resource Management**: Proper cleanup of Three.js resources when switching maps
+- **Developer Tools**: Console utilities for testing and debugging the tournament mode
+- **Code Architecture**: Modular, maintainable component design following the established patterns
+- **Known Issues**: Need to implement proper physics-based collision detection with arena walls and obstacles
+
 ### Step 15: Combat System Reliability Improvements
 
 - **Fixed Entity Lookup and Damage Registration**:
@@ -689,3 +709,115 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
   - **Combo System**: Implement attack combinations and special moves for advanced gameplay
   - **Hitbox Refinement**: Create more precise collision detection for better hit registration
   - **Network Optimization**: Reduce bandwidth usage with binary encoding and delta compression
+
+### Step 16: Tournament Map Implementation
+
+- **Created Tournament Arena Map**:
+
+  - Implemented a 2km x 2km arena environment with walls and obstacles
+  - Added arena-specific lighting with spotlights at corners
+  - Created a unique circular pattern ground texture different from the standard grid
+  - Added walls around the arena to contain players during tournaments
+  - Strategically placed obstacle boxes throughout the arena for tactical gameplay
+  - Created stacked box clusters for more complex obstacles and cover
+  - Set the arena size to 80 units in the game's scale system
+  - Added object pooling for performance optimization
+  - Created obstacle clusters with three.js Groups for better organization
+
+- **Enhanced Game Mode System**:
+
+  - Added game mode selection in character selection screen
+  - Implemented toggle between standard and tournament modes
+  - Created proper map loading based on selected mode
+  - Added map-specific resource cleanup to prevent memory leaks
+  - Integrated map selection with game initialization
+  - Modified Game.js to track current active map
+  - Created \_loadMap() method to switch between maps
+
+- **Added Tournament-Specific Features**:
+
+  - Created special tournament lighting atmosphere with corner spotlights
+  - Added wall collision detection functionality
+  - Implemented obstacle arrangement designed for competitive play
+  - Created tournament-specific visual identity with unique textures and colors
+  - Added ambient light with blueish tint for arena atmosphere
+  - Used spotlights positioned at corners targeting the center
+  - Created a circular arena pattern with concentric circles and radial lines
+  - Added gray arena floor with darker walls for visual contrast
+
+- **Technical Implementation**:
+
+  - Used Three.js groups for complex obstacle arrangements
+  - Implemented proper object pooling for performance optimization
+  - Created reusable map component architecture for future map additions
+  - Added comprehensive resource cleanup to ensure smooth transitions
+  - Established event-based communication for map state changes
+  - Implemented singleton pattern for map instances
+  - Used the eventBus to signal when maps are ready
+  - Added proper disposal of Three.js resources (geometries, materials, textures)
+  - Fixed EventBus import to use default export
+  - Added multiple box sizes for obstacle variety
+
+- **User Interface Changes**:
+
+  - Added tournament mode button in character selection
+  - Implemented visual feedback for mode selection
+  - Created proper game mode tracking through whole application
+  - Added browser console utilities for testing tournament mode
+  - Used consistent styling for mode buttons matching the character selection
+  - Added hover effects and selected state styling for mode buttons
+  - Positioned mode selection above character class selection
+  - Added game mode heading and description
+
+- **Integration with Game Systems**:
+
+  - Modified \_handleStartGame method to use the selected game mode
+  - Updated the Game.start method to accept class type parameter
+  - Fixed the dispose method to cleanup appropriate map resources
+  - Added proper cleanup of spotlights and lighting objects
+  - Ensured wall and obstacle objects are properly removed on map change
+  - Modified the initialization flow to support different maps
+  - Managed event listener cleanup for mode selection buttons
+
+- **Testing and Debugging Utilities**:
+
+  - Added global startTournament() function for console testing
+  - Implemented viewTournamentMap() function to quickly view map without starting game
+  - Exposed tournamentMap object in the global scope for debugging
+  - Added helpful console messages for tracking mode changes
+  - Created clean error handling when changing maps
+  - Added proper event listeners for tracking map ready events
+  - Added safety checks to prevent mode changes during active games
+
+- **Documentation Updates**:
+
+  - Updated README.md with tournament map information
+  - Added tournament map details to PROGRESS.md
+  - Created comprehensive code comments for the tournament map implementation
+  - Added JSDoc comments for all new methods and classes
+  - Documented the map scale (20/80 units = 2km)
+  - Added parameter documentation for all configurable options
+  - Documented message types and game mode states
+  - Added testing utilities descriptions
+
+- **Code Quality Improvements**:
+
+  - Used consistent coding style throughout new components
+  - Added proper error handling and validation
+  - Created clean method organization and naming
+  - Implemented chainable methods for builder pattern usage
+  - Added type annotations in JSDoc comments
+  - Used semantic method and variable names
+  - Created comprehensive resource cleanup
+  - Maintained event-based architecture consistency
+  - Used object-oriented principles throughout implementation
+
+- **Known Issues and Future Improvements**:
+  - Need to implement proper physics-based collision detection with walls and obstacles
+  - Arena size parameter inconsistency (comment says 20 units but set to 80)
+  - Future special tournament rules and mechanics to be implemented
+  - Potential optimization for large numbers of obstacles with instanced meshes
+  - Plan to add tournament-specific sound effects and ambient sounds
+  - Future tournament bracket UI to be implemented
+  - Plan to add victory/defeat screens specific to tournament mode
+  - Will need server-side tournament session management

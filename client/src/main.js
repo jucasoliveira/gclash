@@ -3,9 +3,33 @@ import './webrtc-polyfills.js';
 
 // Then import the game
 import game from './components/core/Game.js';
+import tournamentMap from './components/world/TournamentMap.js';
+import grid from './components/world/Grid.js';
 
 // Expose game globally so Player.js can access it directly for health updates
 window.game = game;
+
+// Expose tournament map and utilities for testing
+window.tournamentMap = tournamentMap;
+window.startTournament = () => {
+  console.log('Starting tournament mode from console...');
+  game.startTournamentMode()
+    .then(() => console.log('Tournament started successfully'))
+    .catch((err) => console.error('Error starting tournament:', err));
+};
+
+// Function to just test viewing the tournament map
+window.viewTournamentMap = () => {
+  console.log('Loading tournament map for viewing...');
+  // Hide grid if visible
+  if (game.currentMap === grid) {
+    game.currentMap.dispose();
+  }
+  // Initialize tournament map
+  tournamentMap.init();
+  game.currentMap = tournamentMap;
+  console.log('Tournament map loaded');
+};
 
 // Add global function for attack miss feedback
 window.showAttackMissedFeedback = (reason, distance, maxRange) => {

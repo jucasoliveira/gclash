@@ -6,6 +6,7 @@ import entityManager from '../entities/EntityManager.js';
 import grid from '../world/Grid.js';
 import uiManager from '../ui/UIManager.js';
 import CHARACTER_CLASSES from '../../config/classes.js';
+import tournamentMap from '../world/TournamentMap.js';
 
 /**
  * Game - Main game controller
@@ -47,7 +48,14 @@ class Game {
     renderer.init(canvas);
     inputManager.init();
     entityManager.init();
+    
+    // Track current map
+    this.currentMap = null;
+    
+    // Initialize standard grid
     grid.init();
+    this.currentMap = grid;
+    
     webSocketManager.configure();
     uiManager.init();
     
@@ -140,6 +148,14 @@ class Game {
     const rangerClass = document.getElementById('ranger-class');
     const startButton = document.getElementById('start-game');
     
+    // Game mode selection
+    const standardModeBtn = document.getElementById('standard-mode');
+    const tournamentModeBtn = document.getElementById('tournament-mode');
+    
+    // Set default game mode
+    this.gameMode = 'standard';
+    
+    // Set up class selection listeners
     if (clerkClass) {
       clerkClass.addEventListener('click', () => this._handleClassSelection('CLERK'));
     }
@@ -152,9 +168,32 @@ class Game {
       rangerClass.addEventListener('click', () => this._handleClassSelection('RANGER'));
     }
     
+    // Set up start game button
     if (startButton) {
-      startButton.addEventListener('click', this._boundHandleStartGame);
+      startButton.addEventListener('click', () => this._handleStartGame());
     }
+    
+    // Set up game mode selection
+    if (standardModeBtn) {
+      standardModeBtn.addEventListener('click', () => {
+        standardModeBtn.classList.add('selected');
+        tournamentModeBtn.classList.remove('selected');
+        this.gameMode = 'standard';
+        console.log('Standard mode selected');
+      });
+    }
+    
+    if (tournamentModeBtn) {
+      tournamentModeBtn.addEventListener('click', () => {
+        tournamentModeBtn.classList.add('selected');
+        standardModeBtn.classList.remove('selected');
+        this.gameMode = 'tournament';
+        console.log('Tournament mode selected');
+      });
+    }
+    
+    // Hide character selection initially
+    this._hideCharacterSelection();
   }
 
   /**
@@ -205,18 +244,23 @@ class Game {
    */
   _handleStartGame() {
     if (!this.selectedClass) {
-      alert('Please select a character class before starting');
+      console.warn('Please select a class first');
       return;
     }
     
     // Hide character selection
     this._hideCharacterSelection();
     
+    // Load the appropriate map based on game mode
+    this._loadMap(this.gameMode);
+    
+    // Start the game
+    this.start(this.selectedClass);
+    
     // Show game UI
     this._showGameUI();
     
-    // Start the game
-    this.start();
+    console.log(`Started game with ${this.selectedClass} class in ${this.gameMode} mode`);
   }
 
   /**
@@ -297,28 +341,48 @@ class Game {
   }
 
   /**
-   * Start the game
-   * @returns {Game} - This instance for chaining
+   * Start the game with a selected class
+   * @param {string} classType - Selected character class
+   * @returns {Promise} - Resolves when game starts
    */
-  async start() {
+  async start(classType) {
+    if (this.isRunning) {
+      console.warn('Game is already running');
+      return;
+    }
+    
+    console.log(`Starting game with class: ${classType}`);
+    
+    // Set up initialization
+    this.isRunning = true;
+    
+    // Show loading feedback
+    const loadingElement = document.createElement('div');
+    loadingElement.textContent = 'Connecting to server...';
+    loadingElement.style.position = 'absolute';
+    loadingElement.style.top = '50%';
+    loadingElement.style.left = '50%';
+    loadingElement.style.transform = 'translate(-50%, -50%)';
+    loadingElement.style.color = 'white';
+    loadingElement.style.fontSize = '24px';
+    loadingElement.style.zIndex = '1000';
+    loadingElement.setAttribute('id', 'loading-element');
+    document.body.appendChild(loadingElement);
+    
     if (!this.isInitialized) {
       console.error('Game not initialized. Call init() first.');
       return this;
     }
-    
-    if (this.isRunning) return this;
-    
-    console.log('Starting Guild Clash...');
-    
-    // Update state
-    this.state = 'loading';
     
     try {
       // Connect to server with timeout
       console.log('Connecting to server...');
       await webSocketManager.connect();
       console.log('Connection successful');
-      
+      const getLoadingElement = document.getElementById('loading-element');
+      if (getLoadingElement) {
+        getLoadingElement.remove();
+      }
       // Wait for player ID assignment
       if (!webSocketManager.playerId) {
         console.log('Waiting for player ID assignment...');
@@ -339,8 +403,8 @@ class Game {
       }
       
       // Create player with selected class and store reference
-      console.log(`Creating player with class: ${this.selectedClass}`);
-      this.player = entityManager.createPlayer(this.selectedClass);
+      console.log(`Creating player with class: ${classType}`);
+      this.player = entityManager.createPlayer(classType);
       
       // Set player ID in the HUD
       if (this.player && uiManager.components.hud) {
@@ -358,7 +422,7 @@ class Game {
       console.log('Joining game with player data');
       webSocketManager.joinGame({
         position: this.player.position,
-        class: this.selectedClass,
+        class: classType,
         stats: this.player.stats,
         type: 'player'
       });
@@ -377,7 +441,6 @@ class Game {
       
       // Update state
       this.state = 'playing';
-      this.isRunning = true;
       
       // Emit event
       eventBus.emit('game.started');
@@ -623,13 +686,22 @@ class Game {
    * Clean up resources
    */
   dispose() {
-    // Stop the game
+    console.log('Disposing game resources...');
+    
+    // Stop game loop
     this.stop();
     
     // Clean up systems
     entityManager.dispose();
     inputManager.dispose();
-    grid.dispose();
+    
+    // Clean up active map
+    if (this.currentMap === grid) {
+      grid.dispose();
+    } else if (this.currentMap === tournamentMap) {
+      tournamentMap.dispose();
+    }
+    
     renderer.dispose();
     uiManager.dispose();
     
@@ -694,6 +766,77 @@ class Game {
   getEntitiesByType(type) {
     if (!type) return [];
     return this.entityManager.getEntitiesByType(type);
+  }
+
+  /**
+   * Load the appropriate map based on game mode
+   * @param {string} mode - Game mode ('standard' or 'tournament')
+   * @private
+   */
+  _loadMap(mode = 'standard') {
+    // Clean up existing map if any
+    if (this.currentMap) {
+      if (this.currentMap === grid) {
+        grid.dispose();
+      } else if (this.currentMap === tournamentMap) {
+        tournamentMap.dispose();
+      }
+    }
+    
+    // Load the appropriate map
+    if (mode === 'tournament') {
+      console.log('Loading tournament map...');
+      tournamentMap.init();
+      this.currentMap = tournamentMap;
+    } else {
+      console.log('Loading standard map...');
+      grid.init();
+      this.currentMap = grid;
+    }
+  }
+
+  /**
+   * Start tournament mode
+   * @returns {Promise} Promise that resolves when tournament starts
+   */
+  async startTournamentMode() {
+    if (this.isRunning) {
+      console.warn('Cannot start tournament mode while game is running');
+      return;
+    }
+    
+    console.log('Starting tournament mode...');
+    
+    // Set game mode
+    this.gameMode = 'tournament';
+    
+    // Show character selection
+    this._showCharacterSelection();
+    
+    // When character is selected and game starts, load tournament map
+    const originalStartGame = this._handleStartGame;
+    this._handleStartGame = () => {
+      // Restore original handler
+      this._handleStartGame = originalStartGame;
+      
+      // Hide character selection
+      this._hideCharacterSelection();
+      
+      // Load tournament map
+      this._loadMap('tournament');
+      
+      // Continue with original start game logic
+      originalStartGame.call(this);
+    };
+    
+    return new Promise((resolve) => {
+      eventBus.once('map.ready', (data) => {
+        if (data.type === 'tournament') {
+          console.log('Tournament map ready');
+          resolve();
+        }
+      });
+    });
   }
 }
 
