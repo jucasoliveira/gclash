@@ -821,3 +821,82 @@ Implemented a specialized 2km x 2km arena environment for competitive play with 
   - Future tournament bracket UI to be implemented
   - Plan to add victory/defeat screens specific to tournament mode
   - Will need server-side tournament session management
+
+### Step 17: Camera System Improvements
+
+- **Enhanced Isometric Camera Behavior**:
+
+  - Implemented a Diablo-style camera that consistently follows the player
+  - Modified the camera to maintain a fixed isometric angle while following the player
+  - Ensured the map remains static in its isometric form during player movement
+  - Fixed issues with map position shifting when the character moves
+  - Adjusted camera positioning to keep the player centered in the view
+  - Implemented smooth camera transitions when following the player
+  - Optimized camera update logic for better performance
+  - Created a more intuitive and user-friendly camera experience
+
+- **Renderer Component Refactoring**:
+
+  - Streamlined the `Renderer.js` component to focus on the camera's follow functionality
+  - Removed the `useStaticView` property from the constructor to simplify camera logic
+  - Updated the `updateCameraPosition` method to ensure the camera maintains a fixed isometric angle
+  - Modified the camera to always look at the player's position, keeping them centered
+  - Removed the `toggleStaticView` method as it was no longer needed
+  - Simplified the `setFollowTarget` method by removing the static view parameter
+  - Enhanced the camera's follow logic to provide a consistent gameplay experience
+  - Improved code readability and maintainability through focused refactoring
+
+- **InputManager Updates**:
+
+  - Removed the `toggleCameraStaticView` method and related key binding from `InputManager.js`
+  - Simplified the key bindings to focus on essential camera and movement controls
+  - Maintained the camera follow mode toggle functionality for flexibility
+  - Streamlined the input handling for a more intuitive user experience
+  - Reduced code complexity by removing unnecessary toggle functionality
+  - Ensured consistent behavior across different input methods
+  - Improved code organization and readability
+  - Enhanced the overall user experience through simplified controls
+
+- **Technical Implementation Details**:
+
+  - Used the Three.js camera API to implement smooth camera following
+  - Leveraged the event-driven architecture for camera state changes
+  - Implemented proper cleanup of event listeners for camera-related events
+  - Added comprehensive error handling for camera operations
+  - Ensured proper integration with the existing entity system
+  - Maintained compatibility with the tournament map implementation
+  - Used consistent coding style and naming conventions
+  - Added detailed JSDoc comments for all modified methods
+
+- **Benefits of the Camera Improvements**:
+
+  - More intuitive gameplay experience with the camera always following the player
+  - Reduced cognitive load on players by eliminating the need to manage camera modes
+  - Enhanced visual consistency with the map remaining static in its isometric form
+  - Improved focus on the player character during gameplay
+  - Better spatial awareness for players in combat situations
+  - More consistent experience across different game modes
+  - Simplified codebase with removal of unnecessary toggle functionality
+  - Improved performance through optimized camera update logic
+
+- **Testing and Validation**:
+
+  - Verified camera behavior across different character classes
+  - Tested camera functionality in both standard and tournament maps
+  - Confirmed smooth camera transitions during rapid player movement
+  - Validated camera behavior during combat scenarios
+  - Ensured proper camera positioning at game initialization
+  - Tested camera performance with multiple entities in the scene
+  - Verified proper cleanup of camera-related resources
+  - Confirmed compatibility with existing game systems
+
+- **Future Camera System Enhancements**:
+
+  - Plan to implement camera zoom functionality for strategic overview
+  - Consider adding camera shake effects for impactful combat feedback
+  - Explore camera transitions between different game states
+  - Investigate performance optimizations for camera updates with many entities
+  - Consider implementing camera collision detection with environment objects
+  - Plan to add camera easing for smoother transitions
+  - Explore cinematic camera modes for special events
+  - Consider implementing camera boundaries for different map sizes

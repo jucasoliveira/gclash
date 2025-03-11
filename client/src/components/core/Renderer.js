@@ -115,10 +115,20 @@ class Renderer {
     const elevationAngle = Math.atan(1 / Math.sqrt(2)); // ~35.264 degrees
     const distance = 20;
     
-    // Calculate target position
-    const targetX = distance * Math.cos(isometricAngle) + offset.x;
-    const targetZ = distance * Math.sin(isometricAngle) + offset.y;
-    const targetY = distance * Math.sin(elevationAngle);
+    // For a Diablo-style camera:
+    // 1. Keep the camera at a fixed isometric angle
+    // 2. Move the camera position to follow the player
+    // 3. Always look at the player's position to keep them centered
+    
+    // Calculate camera position based on isometric angle and distance
+    const cameraOffsetX = distance * Math.cos(isometricAngle);
+    const cameraOffsetZ = distance * Math.sin(isometricAngle);
+    const cameraOffsetY = distance * Math.sin(elevationAngle);
+    
+    // Target camera position (player position + fixed offset)
+    const targetX = offset.x + cameraOffsetX;
+    const targetZ = offset.y + cameraOffsetZ;
+    const targetY = cameraOffsetY; // Keep Y at a fixed height
     
     // If smooth interpolation is enabled and we're following the player
     if (smooth && this.isFollowingPlayer && this.camera.position.x !== undefined) {
@@ -136,7 +146,7 @@ class Renderer {
       this.camera.position.y = targetY;
     }
     
-    // Update camera target (what the camera is looking at)
+    // Always look at the player's position to keep them centered
     const lookTarget = new THREE.Vector3(offset.x, 0, offset.y);
     this.camera.lookAt(lookTarget);
     
@@ -199,6 +209,24 @@ class Renderer {
   }
 
   /**
+   * Set the camera to follow a target entity (Diablo-style)
+   * @param {Entity} target - The entity to follow, typically the player
+   * @param {boolean} follow - Whether to enable follow mode
+   */
+  setFollowTarget(target, follow = true) {
+    this.followTarget = target;
+    this.isFollowingPlayer = follow;
+    
+    // Emit event for other systems to react
+    eventBus.emit('camera.followModeChanged', { 
+      isFollowing: follow, 
+      target: target ? target.id : null
+    });
+    
+    return this;
+  }
+
+  /**
    * Start the render loop
    */
   startRendering() {
@@ -227,24 +255,6 @@ class Renderer {
   }
 
   /**
-   * Set the camera to follow a target entity (Diablo-style)
-   * @param {Entity} target - The entity to follow, typically the player
-   * @param {boolean} follow - Whether to enable follow mode
-   */
-  setFollowTarget(target, follow = true) {
-    this.followTarget = target;
-    this.isFollowingPlayer = follow;
-    
-    // Emit event for other systems to react
-    eventBus.emit('camera.followModeChanged', { 
-      isFollowing: follow, 
-      target: target ? target.id : null 
-    });
-    
-    return this;
-  }
-
-  /**
    * Render loop
    */
   render(timestamp) {
@@ -258,7 +268,7 @@ class Renderer {
     // Update camera position if following a target
     if (this.isFollowingPlayer && this.followTarget) {
       const target = this.followTarget.position;
-      this.updateCameraPosition({ x: target.x, y: target.z });
+      this.updateCameraPosition({ x: target.x, y: target.z }, true);
     }
     
     // Emit before render event for other systems to update
@@ -291,7 +301,7 @@ class Renderer {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     
     // Emit resize event
-    eventBus.emit('renderer.resize', {
+    eventBus.emit('renderer.resized', {
       width: window.innerWidth,
       height: window.innerHeight,
       aspect
@@ -304,32 +314,48 @@ class Renderer {
    * @private
    */
   _handleAddObject(data) {
-    const { id, object, temporary, duration } = data;
-    this.addObject(id, object, temporary, duration);
+    if (data && data.id && data.object) {
+      this.addObject(data.id, data.object, data.temporary, data.duration);
+    }
   }
 
   /**
    * Clean up resources
    */
   dispose() {
+    // Stop rendering
     this.stopRendering();
     
-    // Remove resize listener
-    window.removeEventListener('resize', this.onResize);
-    
     // Remove event listeners
+    window.removeEventListener('resize', this.onResize);
     eventBus.off('renderer.addObject');
     
-    // Clear scene
-    this.objects.clear();
-    while(this.scene.children.length > 0) { 
-      this.scene.remove(this.scene.children[0]); 
-    }
+    // Clean up objects
+    this.objects.forEach((object, id) => {
+      this.scene.remove(object);
+      
+      // Dispose of geometries and materials
+      if (object.geometry) object.geometry.dispose();
+      if (object.material) {
+        if (Array.isArray(object.material)) {
+          object.material.forEach(material => material.dispose());
+        } else {
+          object.material.dispose();
+        }
+      }
+    });
     
-    // Dispose renderer
+    this.objects.clear();
+    
+    // Clean up renderer
     if (this.renderer) {
       this.renderer.dispose();
+      this.renderer = null;
     }
+    
+    // Clean up scene
+    this.scene = null;
+    this.camera = null;
     
     this.isInitialized = false;
   }
