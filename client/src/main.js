@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import game from './components/core/Game.js';
 import tournamentMap from './components/world/TournamentMap.js';
 import grid from './components/world/Grid.js';
+import battleRoyaleMap from './components/world/BattleRoyaleMap.js';
 
 // Initialize game when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
@@ -72,6 +73,45 @@ window.viewTournamentMap = () => {
   window.game.currentMap = tournamentMap;
   console.log('Tournament map loaded');
 };
+
+// Global functions for Battle Royale mode
+window.startBattleRoyale = () => {
+  console.log('Starting battle royale mode from console...');
+  if (window.game && typeof window.game.startBattleRoyaleMode === 'function') {
+    window.game.startBattleRoyaleMode()
+      .then(() => console.log('Battle Royale started successfully'))
+      .catch((err) => console.error('Error starting battle royale:', err));
+  } else {
+    console.error('Game instance not available or missing startBattleRoyaleMode method');
+  }
+};
+
+window.viewBattleRoyaleMap = () => {
+  console.log('Loading battle royale map for viewing...');
+  if (!window.game) {
+    console.error('Game instance not available');
+    return;
+  }
+  
+  // Clean up existing map
+  if (window.game.currentMap) {
+    if (window.game.currentMap === grid) {
+      grid.dispose();
+    } else if (window.game.currentMap === tournamentMap) {
+      tournamentMap.dispose();
+    } else if (window.game.currentMap === battleRoyaleMap) {
+      battleRoyaleMap.dispose();
+    }
+  }
+  
+  // Initialize battle royale map
+  battleRoyaleMap.init();
+  window.game.currentMap = battleRoyaleMap;
+  console.log('Battle Royale map loaded for viewing');
+};
+
+// Expose battle royale map for debugging
+window.battleRoyaleMap = battleRoyaleMap;
 
 // Add global function for attack miss feedback
 window.showAttackMissedFeedback = (reason, distance, maxRange) => {

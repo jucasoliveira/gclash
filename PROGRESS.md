@@ -900,3 +900,87 @@ Implemented a specialized 2km x 2km arena environment for competitive play with 
   - Plan to add camera easing for smoother transitions
   - Explore cinematic camera modes for special events
   - Consider implementing camera boundaries for different map sizes
+
+### Step 18: Battle Royale Map Implementation
+
+- **Created Battle Royale Map**:
+
+  - Implemented a massive 1000km x 1000km map for battle royale gameplay
+  - Added terrain features with randomly placed trees (cylinders with cone tops)
+  - Created a natural-looking ground texture with subtle variations
+  - Added health pickup items as glowing red spheres
+  - Implemented pickup collection with healing effects
+  - Created particle effects when collecting health pickups
+  - Added smooth animations for pickups (rotation and bobbing)
+  - Implemented pickup respawn system after collection
+
+- **Enhanced Game Mode System**:
+
+  - Added battle royale mode selection in character selection screen
+  - Implemented toggle between standard, tournament, and battle royale modes
+  - Created proper map loading based on selected mode
+  - Added map-specific resource cleanup to prevent memory leaks
+  - Integrated map selection with game initialization
+  - Modified Game.js to track current active map
+  - Enhanced \_loadMap() method to support battle royale map
+
+- **Added Health Pickup System**:
+
+  - Created collectible health pickups that restore player health
+  - Implemented collision detection for pickups
+  - Added health restoration effect with green screen flash
+  - Created event-based communication for health pickup events
+  - Implemented pickup respawn system with random positioning
+  - Added visual feedback when collecting pickups
+  - Created particle explosion effects for pickups
+
+- **Technical Implementation**:
+
+  - Used Three.js groups for complex objects like trees
+  - Implemented proper object pooling for performance optimization
+  - Created reusable map component architecture for future map additions
+  - Added comprehensive resource cleanup to ensure smooth transitions
+  - Established event-based communication for map state changes
+  - Implemented singleton pattern for map instances
+  - Used the eventBus to signal when maps are ready
+  - Added proper disposal of Three.js resources (geometries, materials, textures)
+
+- **User Interface Changes**:
+
+  - Added battle royale mode button in character selection
+  - Implemented visual feedback for mode selection
+  - Created proper game mode tracking through whole application
+  - Added browser console utilities for testing battle royale mode
+  - Used consistent styling for mode buttons matching the character selection
+  - Added hover effects and selected state styling for mode buttons
+
+- **Integration with Game Systems**:
+
+  - Modified \_handleStartGame method to use the selected game mode
+  - Updated the Game.start method to accept class type parameter
+  - Fixed the dispose method to cleanup appropriate map resources
+  - Added proper cleanup of trees and pickup objects
+  - Ensured all objects are properly removed on map change
+  - Modified the initialization flow to support different maps
+  - Managed event listener cleanup for mode selection buttons
+
+- **Testing and Debugging Utilities**:
+
+  - Added global startBattleRoyale() function for console testing
+  - Implemented viewBattleRoyaleMap() function to quickly view map without starting game
+  - Exposed battleRoyaleMap object in the global scope for debugging
+  - Added helpful console messages for tracking mode changes
+  - Created clean error handling when changing maps
+  - Added proper event listeners for tracking map ready events
+  - Added safety checks to prevent mode changes during active games
+
+- **Future Battle Royale Features**:
+
+  - Plan to implement shrinking play area with damage outside the safe zone
+  - Will add more varied terrain with hills and water features
+  - Plan to implement weapon pickups with different attack types
+  - Will add AI-controlled enemies for more challenging gameplay
+  - Plan to implement player count display and last player standing victory condition
+  - Will add spectator mode for eliminated players
+  - Plan to implement leaderboard for battle royale mode
+  - Will add special battle royale-specific sound effects and music

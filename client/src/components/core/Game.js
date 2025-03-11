@@ -7,6 +7,7 @@ import grid from '../world/Grid.js';
 import uiManager from '../ui/UIManager.js';
 import CHARACTER_CLASSES from '../../config/classes.js';
 import tournamentMap from '../world/TournamentMap.js';
+import battleRoyaleMap from '../world/BattleRoyaleMap.js';
 
 /**
  * Game - Main game controller
@@ -61,6 +62,9 @@ class Game {
     
     // Set up UI event listeners
     this._setupUIEvents();
+    
+    // Set up health pickup handler
+    this._setupHealthPickupHandler();
     
     // Listen for player health changes
     eventBus.on('network.playerHealthChanged', (data) => {
@@ -161,6 +165,7 @@ class Game {
     // Game mode selection
     const standardModeBtn = document.getElementById('standard-mode');
     const tournamentModeBtn = document.getElementById('tournament-mode');
+    const battleRoyaleModeBtn = document.getElementById('battle-royale-mode');
     
     // Set default game mode
     this.gameMode = 'standard';
@@ -197,6 +202,7 @@ class Game {
       standardModeBtn.addEventListener('click', () => {
         standardModeBtn.classList.add('selected');
         tournamentModeBtn.classList.remove('selected');
+        battleRoyaleModeBtn.classList.remove('selected');
         this.gameMode = 'standard';
         console.log('Standard mode selected');
       });
@@ -206,8 +212,19 @@ class Game {
       tournamentModeBtn.addEventListener('click', () => {
         tournamentModeBtn.classList.add('selected');
         standardModeBtn.classList.remove('selected');
+        battleRoyaleModeBtn.classList.remove('selected');
         this.gameMode = 'tournament';
         console.log('Tournament mode selected');
+      });
+    }
+    
+    if (battleRoyaleModeBtn) {
+      battleRoyaleModeBtn.addEventListener('click', () => {
+        battleRoyaleModeBtn.classList.add('selected');
+        standardModeBtn.classList.remove('selected');
+        tournamentModeBtn.classList.remove('selected');
+        this.gameMode = 'battleRoyale';
+        console.log('Battle Royale mode selected');
       });
     }
     
@@ -737,6 +754,8 @@ class Game {
       grid.dispose();
     } else if (this.currentMap === tournamentMap) {
       tournamentMap.dispose();
+    } else if (this.currentMap === battleRoyaleMap) {
+      battleRoyaleMap.dispose();
     }
     
     renderer.dispose();
@@ -807,7 +826,7 @@ class Game {
 
   /**
    * Load the appropriate map based on game mode
-   * @param {string} mode - Game mode ('standard' or 'tournament')
+   * @param {string} mode - Game mode ('standard' or 'tournament' or 'battleRoyale')
    * @private
    */
   _loadMap(mode = 'standard') {
@@ -817,6 +836,8 @@ class Game {
         grid.dispose();
       } else if (this.currentMap === tournamentMap) {
         tournamentMap.dispose();
+      } else if (this.currentMap === battleRoyaleMap) {
+        battleRoyaleMap.dispose();
       }
     }
     
@@ -825,6 +846,10 @@ class Game {
       console.log('Loading tournament map...');
       tournamentMap.init();
       this.currentMap = tournamentMap;
+    } else if (mode === 'battleRoyale') {
+      console.log('Loading battle royale map...');
+      battleRoyaleMap.init();
+      this.currentMap = battleRoyaleMap;
     } else {
       console.log('Loading standard map...');
       grid.init();
@@ -874,6 +899,81 @@ class Game {
         }
       });
     });
+  }
+
+  /**
+   * Start battle royale mode
+   * @returns {Promise} Promise that resolves when battle royale starts
+   */
+  async startBattleRoyaleMode() {
+    if (this.isRunning) {
+      console.warn('Cannot start battle royale mode while game is running');
+      return;
+    }
+    
+    console.log('Starting battle royale mode...');
+    
+    // Set game mode
+    this.gameMode = 'battleRoyale';
+    
+    // Show character selection
+    this.state = 'characterSelection';
+    this._showCharacterSelection();
+  }
+
+  // Add player health pickup handler
+  _setupHealthPickupHandler() {
+    eventBus.on('player.healthPickup', (data) => {
+      if (this.player && this.player.health !== undefined) {
+        // Calculate new health (don't exceed max)
+        const newHealth = Math.min(
+          this.player.stats.health, 
+          this.player.health + data.healAmount
+        );
+        
+        // Update player health
+        this.player.health = newHealth;
+        
+        // Update UI
+        this.updateHealthUI(newHealth, this.player.stats.health);
+        
+        // Play heal effect
+        this._playHealEffect();
+        
+        console.log(`Player healed for ${data.healAmount}. New health: ${newHealth}/${this.player.stats.health}`);
+      }
+    });
+  }
+
+  /**
+   * Play heal effect
+   * @private
+   */
+  _playHealEffect() {
+    // Create a green flash effect
+    const flashElement = document.createElement('div');
+    flashElement.style.position = 'absolute';
+    flashElement.style.top = '0';
+    flashElement.style.left = '0';
+    flashElement.style.width = '100%';
+    flashElement.style.height = '100%';
+    flashElement.style.backgroundColor = 'rgba(46, 204, 113, 0.3)';
+    flashElement.style.pointerEvents = 'none';
+    flashElement.style.zIndex = '1000';
+    flashElement.style.transition = 'opacity 0.5s ease-out';
+    
+    document.body.appendChild(flashElement);
+    
+    // Fade out and remove
+    setTimeout(() => {
+      flashElement.style.opacity = '0';
+      setTimeout(() => {
+        flashElement.remove();
+      }, 500);
+    }, 100);
+    
+    // Play heal sound (if we had audio)
+    // audioManager.play('heal');
   }
 }
 
