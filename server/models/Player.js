@@ -2,8 +2,84 @@ const mongoose = require('mongoose');
 const crypto = require('crypto');
 
 /**
+ * Character Schema
+ * Represents a playable character with class, level, and equipment
+ */
+const characterSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+    trim: true,
+    minlength: 3,
+    maxlength: 50
+  },
+  characterClass: {
+    type: String,
+    required: true,
+    enum: ['CLERK', 'WARRIOR', 'RANGER'],
+    default: 'CLERK'
+  },
+  level: {
+    type: Number,
+    default: 1,
+    min: 1,
+    max: 100
+  },
+  experience: {
+    type: Number,
+    default: 0
+  },
+  equipment: {
+    weapon: {
+      type: String,
+      default: null
+    },
+    armor: {
+      type: String,
+      default: null
+    },
+    accessory: {
+      type: String,
+      default: null
+    }
+  },
+  items: [{
+    name: String,
+    type: String,
+    rarity: String,
+    stats: mongoose.Schema.Types.Mixed
+  }],
+  stats: {
+    wins: { type: Number, default: 0 },
+    losses: { type: Number, default: 0 },
+    kills: { type: Number, default: 0 },
+    deaths: { type: Number, default: 0 },
+    damageDealt: { type: Number, default: 0 },
+    healingDone: { type: Number, default: 0 },
+    gamesPlayed: { type: Number, default: 0 }
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+    immutable: true
+  }
+});
+
+// Virtual for character win rate calculation
+characterSchema.virtual('winRate').get(function() {
+  if (this.stats.gamesPlayed === 0) return 0;
+  return (this.stats.wins / this.stats.gamesPlayed * 100).toFixed(2);
+});
+
+// Virtual for character KD ratio calculation
+characterSchema.virtual('kdRatio').get(function() {
+  if (this.stats.deaths === 0) return this.stats.kills;
+  return (this.stats.kills / this.stats.deaths).toFixed(2);
+});
+
+/**
  * Player Schema
- * Stores player information, character class, and game statistics
+ * Stores user account information and owns multiple characters
  */
 const playerSchema = new mongoose.Schema({
   username: {
@@ -32,11 +108,10 @@ const playerSchema = new mongoose.Schema({
     type: String,
     select: false // Don't include salt in query results by default
   },
-  characterClass: {
-    type: String,
-    required: true,
-    enum: ['CLERK', 'WARRIOR', 'RANGER'],
-    default: 'CLERK'
+  characters: [characterSchema],
+  activeCharacterId: {
+    type: mongoose.Schema.Types.ObjectId,
+    default: null
   },
   score: {
     type: Number,
@@ -46,15 +121,6 @@ const playerSchema = new mongoose.Schema({
     type: String,
     enum: ['BRONZE', 'SILVER', 'GOLD', 'PLATINUM', 'DIAMOND'],
     default: 'BRONZE'
-  },
-  stats: {
-    wins: { type: Number, default: 0 },
-    losses: { type: Number, default: 0 },
-    kills: { type: Number, default: 0 },
-    deaths: { type: Number, default: 0 },
-    damageDealt: { type: Number, default: 0 },
-    healingDone: { type: Number, default: 0 },
-    gamesPlayed: { type: Number, default: 0 }
   },
   lastActive: {
     type: Date,
@@ -69,21 +135,15 @@ const playerSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Virtual for win rate calculation
-playerSchema.virtual('winRate').get(function() {
-  if (this.stats.gamesPlayed === 0) return 0;
-  return (this.stats.wins / this.stats.gamesPlayed * 100).toFixed(2);
-});
-
-// Virtual for KD ratio calculation
-playerSchema.virtual('kdRatio').get(function() {
-  if (this.stats.deaths === 0) return this.stats.kills;
-  return (this.stats.kills / this.stats.deaths).toFixed(2);
-});
-
-// Method to update player score
-playerSchema.methods.updateScore = function(points) {
-  this.score += points;
+// Method to update player score and tier based on character performance
+playerSchema.methods.updateScore = function() {
+  // Calculate total score based on all characters
+  let totalScore = 0;
+  this.characters.forEach(character => {
+    totalScore += (character.stats.wins * 10) + (character.stats.kills * 2);
+  });
+  
+  this.score = totalScore;
   
   // Update tier based on score
   if (this.score >= 5000) {
@@ -98,6 +158,23 @@ playerSchema.methods.updateScore = function(points) {
     this.tier = 'BRONZE';
   }
   
+  return this.save();
+};
+
+// Method to create a new character
+playerSchema.methods.createCharacter = function(characterData) {
+  this.characters.push(characterData);
+  return this.save();
+};
+
+// Method to get a character by ID
+playerSchema.methods.getCharacter = function(characterId) {
+  return this.characters.id(characterId);
+};
+
+// Method to set active character
+playerSchema.methods.setActiveCharacter = function(characterId) {
+  this.activeCharacterId = characterId;
   return this.save();
 };
 
@@ -121,7 +198,7 @@ playerSchema.statics.getLeaderboard = function(limit = 10) {
   return this.find()
     .sort({ score: -1 })
     .limit(limit)
-    .select('username characterClass score tier stats');
+    .select('username tier score');
 };
 
 const Player = mongoose.model('Player', playerSchema);

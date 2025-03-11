@@ -35,7 +35,10 @@ All messages are JSON objects with a `type` field indicating the message type. A
   type: 'join',
   playerData: {
     username: 'PlayerName',
-    characterClass: 'clerk',
+    characterId: 'character_id', // ID of the active character
+    characterName: 'CharacterName', // Name of the active character
+    characterClass: 'CLERK', // Class of the active character (CLERK, WARRIOR, RANGER)
+    characterLevel: 5, // Level of the active character
     position: { x: 0, y: 0, z: 0 },
     auth: {
       userId: 'database_user_id',
@@ -532,6 +535,188 @@ All messages are JSON objects with a `type` field indicating the message type. A
   radius: 50,
   shrinkTime: 60, // seconds
   damagePerSecond: 5
+}
+```
+
+## Character-Related Messages
+
+### Client to Server
+
+#### characterUpdate
+
+Sent when a character's stats are updated (after a match, when gaining experience, etc.)
+
+```javascript
+{
+  type: 'characterUpdate',
+  characterId: 'character_id',
+  updates: {
+    experience: 150, // Experience gained
+    level: 6, // New level if leveled up
+    stats: {
+      wins: 1, // Increment wins
+      losses: 0,
+      kills: 3, // Increment kills
+      deaths: 1, // Increment deaths
+      damageDealt: 450, // Add damage dealt
+      healingDone: 0,
+      gamesPlayed: 1 // Increment games played
+    }
+  }
+}
+```
+
+#### characterEquipItem
+
+Sent when a character equips an item
+
+```javascript
+{
+  type: 'characterEquipItem',
+  characterId: 'character_id',
+  slot: 'weapon', // weapon, armor, or accessory
+  item: {
+    name: 'Excalibur',
+    type: 'sword',
+    rarity: 'legendary',
+    stats: {
+      damage: 50,
+      critChance: 10
+    }
+  }
+}
+```
+
+#### characterAddItem
+
+Sent when a character acquires a new item
+
+```javascript
+{
+  type: 'characterAddItem',
+  characterId: 'character_id',
+  item: {
+    name: 'Health Potion',
+    type: 'consumable',
+    rarity: 'common',
+    stats: {
+      healing: 25
+    }
+  }
+}
+```
+
+### Server to Client
+
+#### characterUpdated
+
+Sent to confirm character updates and broadcast to other players if needed
+
+```javascript
+{
+  type: 'characterUpdated',
+  characterId: 'character_id',
+  updates: {
+    experience: 150,
+    level: 6,
+    stats: {
+      wins: 10,
+      losses: 3,
+      kills: 25,
+      deaths: 8,
+      damageDealt: 1500,
+      healingDone: 800,
+      gamesPlayed: 13
+    }
+  },
+  leveledUp: true, // Indicates if the character leveled up
+  rewards: [
+    {
+      type: 'item',
+      name: 'Steel Sword',
+      rarity: 'uncommon'
+    },
+    {
+      type: 'currency',
+      amount: 100
+    }
+  ]
+}
+```
+
+#### characterEquipmentUpdated
+
+Sent to confirm equipment changes and broadcast to other players
+
+```javascript
+{
+  type: 'characterEquipmentUpdated',
+  characterId: 'character_id',
+  equipment: {
+    weapon: {
+      name: 'Excalibur',
+      type: 'sword',
+      rarity: 'legendary',
+      stats: {
+        damage: 50,
+        critChance: 10
+      }
+    },
+    armor: {
+      name: 'Mithril Plate',
+      type: 'heavy',
+      rarity: 'rare',
+      stats: {
+        defense: 30,
+        healthBonus: 20
+      }
+    },
+    accessory: {
+      name: 'Amulet of Power',
+      type: 'amulet',
+      rarity: 'epic',
+      stats: {
+        magicBoost: 15,
+        cooldownReduction: 10
+      }
+    }
+  },
+  statChanges: {
+    health: +20,
+    damage: +50,
+    defense: +30,
+    speed: -5
+  }
+}
+```
+
+#### characterInventoryUpdated
+
+Sent to confirm inventory changes
+
+```javascript
+{
+  type: 'characterInventoryUpdated',
+  characterId: 'character_id',
+  inventory: [
+    {
+      name: 'Health Potion',
+      type: 'consumable',
+      rarity: 'common',
+      stats: {
+        healing: 25
+      },
+      quantity: 3
+    },
+    {
+      name: 'Iron Sword',
+      type: 'weapon',
+      rarity: 'common',
+      stats: {
+        damage: 15
+      }
+    }
+  ]
 }
 ```
 

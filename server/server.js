@@ -7,6 +7,8 @@ const WebSocket = require('ws');
 const mongoose = require('mongoose');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+const cors = require('cors');
+const bodyParser = require('body-parser');
 
 // Import models
 const { Player } = require('./models');
@@ -24,6 +26,11 @@ const wss = new WebSocket.Server({ server });
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/guildclash';
 const NODE_ENV = process.env.NODE_ENV || 'development';
+
+// Middleware
+app.use(cors());
+app.use(bodyParser.json());
+app.use(express.static(path.join(__dirname, '../client/dist')));
 
 // Character class definitions
 const CHARACTER_CLASSES = {
@@ -121,27 +128,269 @@ const connectMongoDB = async () => {
 // Try to connect but don't stop server if connection fails
 connectMongoDB();
 
-// Middleware
-app.use(express.json());
-app.use(express.static(path.join(__dirname, '../client/dist')));
+// API Routes
 
-// CORS middleware
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  
-  // Handle preflight requests
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
+/**
+ * @route   POST /api/auth/register
+ * @desc    Register a new player
+ * @access  Public
+ */
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { username, email, password } = req.body;
+
+    // Check if username or email already exists
+    const existingPlayer = await Player.findOne({
+      $or: [{ username }, { email }]
+    });
+
+    if (existingPlayer) {
+      return res.status(400).json({
+        error: existingPlayer.username === username
+          ? 'Username already exists'
+          : 'Email already exists'
+      });
+    }
+
+    // Create new player
+    const newPlayer = new Player({
+      username,
+      email,
+      characters: []
+    });
+
+    // Set password (this uses the method defined in the Player model)
+    newPlayer.setPassword(password);
+
+    // Save player to database
+    await newPlayer.save();
+
+    // Return player data (excluding password and salt)
+    res.status(201).json({
+      id: newPlayer._id,
+      username: newPlayer.username,
+      email: newPlayer.email,
+      tier: newPlayer.tier,
+      characters: []
+    });
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({ error: 'Server error during registration' });
   }
-  
-  next();
 });
 
-// API Routes
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', uptime: process.uptime() });
+/**
+ * @route   POST /api/auth/login
+ * @desc    Login a player
+ * @access  Public
+ */
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    // Find player by username and include password and salt fields
+    const player = await Player.findOne({ username }).select('+password +salt');
+
+    if (!player) {
+      return res.status(401).json({ error: 'Invalid username or password' });
+    }
+
+    // Validate password
+    if (!player.validatePassword(password)) {
+      return res.status(401).json({ error: 'Invalid username or password' });
+    }
+
+    // Update last active timestamp
+    player.lastActive = Date.now();
+    await player.save();
+
+    // Return player data (excluding password and salt)
+    res.json({
+      id: player._id,
+      username: player.username,
+      email: player.email,
+      tier: player.tier,
+      characters: player.characters,
+      activeCharacterId: player.activeCharacterId
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Server error during login' });
+  }
+});
+
+/**
+ * @route   GET /api/characters
+ * @desc    Get all characters for a player
+ * @access  Private
+ */
+app.get('/api/characters', async (req, res) => {
+  try {
+    const { playerId } = req.query;
+
+    if (!playerId) {
+      return res.status(400).json({ error: 'Player ID is required' });
+    }
+
+    const player = await Player.findById(playerId);
+
+    if (!player) {
+      return res.status(404).json({ error: 'Player not found' });
+    }
+
+    res.json({
+      characters: player.characters,
+      activeCharacterId: player.activeCharacterId
+    });
+  } catch (error) {
+    console.error('Error fetching characters:', error);
+    res.status(500).json({ error: 'Server error fetching characters' });
+  }
+});
+
+/**
+ * @route   POST /api/characters
+ * @desc    Create a new character for a player
+ * @access  Private
+ */
+app.post('/api/characters', async (req, res) => {
+  try {
+    const { playerId, name, characterClass } = req.body;
+
+    if (!playerId || !name || !characterClass) {
+      return res.status(400).json({ error: 'Player ID, name, and character class are required' });
+    }
+
+    const player = await Player.findById(playerId);
+
+    if (!player) {
+      return res.status(404).json({ error: 'Player not found' });
+    }
+
+    // Validate character class
+    const validClasses = ['CLERK', 'WARRIOR', 'RANGER'];
+    const normalizedClass = characterClass.toUpperCase();
+    
+    if (!validClasses.includes(normalizedClass)) {
+      return res.status(400).json({ error: 'Invalid character class' });
+    }
+
+    // Create new character
+    const newCharacter = {
+      name,
+      characterClass: normalizedClass,
+      level: 1,
+      experience: 0,
+      equipment: {
+        weapon: null,
+        armor: null,
+        accessory: null
+      },
+      items: [],
+      stats: {
+        wins: 0,
+        losses: 0,
+        kills: 0,
+        deaths: 0,
+        damageDealt: 0,
+        healingDone: 0,
+        gamesPlayed: 0
+      }
+    };
+
+    // Add character to player
+    player.characters.push(newCharacter);
+    
+    // If this is the player's first character, set it as active
+    if (player.characters.length === 1) {
+      player.activeCharacterId = player.characters[0]._id;
+    }
+    
+    await player.save();
+
+    res.status(201).json({
+      character: player.characters[player.characters.length - 1],
+      activeCharacterId: player.activeCharacterId
+    });
+  } catch (error) {
+    console.error('Error creating character:', error);
+    res.status(500).json({ error: 'Server error creating character' });
+  }
+});
+
+/**
+ * @route   PUT /api/characters/:characterId/activate
+ * @desc    Set a character as active
+ * @access  Private
+ */
+app.put('/api/characters/:characterId/activate', async (req, res) => {
+  try {
+    const { characterId } = req.params;
+    const { playerId } = req.body;
+
+    if (!playerId) {
+      return res.status(400).json({ error: 'Player ID is required' });
+    }
+
+    const player = await Player.findById(playerId);
+
+    if (!player) {
+      return res.status(404).json({ error: 'Player not found' });
+    }
+
+    // Check if character exists
+    const character = player.characters.id(characterId);
+
+    if (!character) {
+      return res.status(404).json({ error: 'Character not found' });
+    }
+
+    // Set character as active
+    player.activeCharacterId = characterId;
+    await player.save();
+
+    res.json({
+      activeCharacterId: player.activeCharacterId,
+      message: 'Character activated successfully'
+    });
+  } catch (error) {
+    console.error('Error activating character:', error);
+    res.status(500).json({ error: 'Server error activating character' });
+  }
+});
+
+/**
+ * @route   GET /api/characters/:characterId
+ * @desc    Get a specific character
+ * @access  Private
+ */
+app.get('/api/characters/:characterId', async (req, res) => {
+  try {
+    const { characterId } = req.params;
+    const { playerId } = req.query;
+
+    if (!playerId) {
+      return res.status(400).json({ error: 'Player ID is required' });
+    }
+
+    const player = await Player.findById(playerId);
+
+    if (!player) {
+      return res.status(404).json({ error: 'Player not found' });
+    }
+
+    // Find character
+    const character = player.characters.id(characterId);
+
+    if (!character) {
+      return res.status(404).json({ error: 'Character not found' });
+    }
+
+    res.json({ character });
+  } catch (error) {
+    console.error('Error fetching character:', error);
+    res.status(500).json({ error: 'Server error fetching character' });
+  }
 });
 
 // API endpoint to check for battle royale triggers
@@ -223,104 +472,6 @@ app.post('/api/add-test-winners', async (req, res) => {
   } catch (error) {
     console.error('Error adding test winners:', error);
     res.status(500).json({ success: false, error: 'Failed to add test winners' });
-  }
-});
-
-// Authentication routes
-app.post('/api/auth/register', async (req, res) => {
-  try {
-    const { username, email, password } = req.body;
-    
-    // Check if username or email already exists
-    const existingUser = await Player.findOne({ 
-      $or: [{ username }, { email }] 
-    });
-    
-    if (existingUser) {
-      return res.status(400).json({ 
-        error: 'Username or email already exists' 
-      });
-    }
-    
-    // Create new player
-    const player = new Player({
-      username,
-      email,
-      characterClass: 'CLERK' // Default class
-    });
-    
-    // Set password (this will hash it)
-    player.setPassword(password);
-    
-    // Save player
-    await player.save();
-    
-    // Return player data (without sensitive fields)
-    res.status(201).json({
-      id: player._id,
-      username: player.username,
-      email: player.email,
-      characterClass: player.characterClass,
-      tier: player.tier,
-      score: player.score
-    });
-  } catch (err) {
-    console.error('Registration error:', err);
-    
-    // Handle validation errors
-    if (err.name === 'ValidationError') {
-      const validationErrors = {};
-      
-      // Extract validation error messages
-      for (const field in err.errors) {
-        validationErrors[field] = err.errors[field].message;
-      }
-      
-      return res.status(400).json({ 
-        error: 'Validation failed', 
-        validationErrors 
-      });
-    }
-    
-    // Handle other errors
-    res.status(500).json({ error: 'Registration failed: ' + err.message });
-  }
-});
-
-app.post('/api/auth/login', async (req, res) => {
-  try {
-    const { username, password } = req.body;
-    
-    // Find player with username and include password and salt fields
-    const player = await Player.findOne({ username })
-      .select('+password +salt');
-    
-    // Check if player exists
-    if (!player) {
-      return res.status(401).json({ error: 'Invalid username or password' });
-    }
-    
-    // Validate password
-    if (!player.validatePassword(password)) {
-      return res.status(401).json({ error: 'Invalid username or password' });
-    }
-    
-    // Update last active timestamp
-    player.lastActive = Date.now();
-    await player.save();
-    
-    // Return player data (without sensitive fields)
-    res.json({
-      id: player._id,
-      username: player.username,
-      email: player.email,
-      characterClass: player.characterClass,
-      tier: player.tier,
-      score: player.score
-    });
-  } catch (err) {
-    console.error('Login error:', err);
-    res.status(500).json({ error: 'Login failed' });
   }
 });
 

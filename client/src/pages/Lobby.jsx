@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 function Lobby() {
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
+  const [activeCharacter, setActiveCharacter] = useState(null);
   const [playerCount, setPlayerCount] = useState({
     tournament: 12,
     battleRoyale: 27,
@@ -18,6 +19,14 @@ function Lobby() {
       try {
         const user = JSON.parse(userData);
         setUsername(user.username || 'Player');
+        
+        // Get active character
+        if (user.activeCharacter) {
+          setActiveCharacter(user.activeCharacter);
+        } else {
+          // If no active character, redirect to character selection
+          navigate('/character-selection');
+        }
       } catch (error) {
         console.error('Error parsing user data:', error);
       }
@@ -37,6 +46,47 @@ function Lobby() {
   const handleLogout = () => {
     localStorage.removeItem('guildClashUser');
     navigate('/');
+  };
+
+  const handleChangeCharacter = () => {
+    navigate('/character-selection');
+  };
+
+  const handleSelectGameMode = (mode) => {
+    navigate('/game', { 
+      state: { 
+        characterClass: activeCharacter.characterClass,
+        gameMode: mode === 'battle-royale' ? 'battleRoyale' : mode
+      } 
+    });
+  };
+
+  // Get class color
+  const getClassColor = () => {
+    switch (activeCharacter?.characterClass) {
+      case 'CLERK':
+        return 'blue';
+      case 'WARRIOR':
+        return 'red';
+      case 'RANGER':
+        return 'green';
+      default:
+        return '#8b3a3a';
+    }
+  };
+
+  // Get class name
+  const getClassName = () => {
+    switch (activeCharacter?.characterClass) {
+      case 'CLERK':
+        return 'Clerk';
+      case 'WARRIOR':
+        return 'Warrior';
+      case 'RANGER':
+        return 'Ranger';
+      default:
+        return 'Unknown';
+    }
   };
 
   return (
@@ -75,6 +125,44 @@ function Lobby() {
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', position: 'relative' }}>
+          {activeCharacter && (
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.5rem',
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              padding: '0.25rem 0.5rem',
+              borderRadius: '0.25rem',
+              border: `1px solid ${getClassColor()}`,
+              cursor: 'pointer'
+            }}
+            onClick={handleChangeCharacter}
+            >
+              <div style={{ 
+                height: '1.75rem', 
+                width: '1.75rem', 
+                borderRadius: '50%', 
+                backgroundColor: getClassColor(),
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'white',
+                fontWeight: 'bold',
+                fontSize: '0.75rem'
+              }}>
+                {getClassName().substring(0, 1)}
+              </div>
+              <div>
+                <div style={{ fontSize: '0.75rem', color: '#5a3e2a' }}>
+                  {activeCharacter.name}
+                </div>
+                <div style={{ fontSize: '0.625rem', color: getClassColor(), fontWeight: 'bold' }}>
+                  Lvl {activeCharacter.level} {getClassName()}
+                </div>
+              </div>
+            </div>
+          )}
+          
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <div style={{ 
               height: '2rem', 
@@ -98,253 +186,322 @@ function Lobby() {
           <button 
             onClick={handleLogout}
             style={{ 
-              background: 'transparent', 
-              border: 'none', 
-              color: '#8b3a3a', 
+              backgroundColor: 'transparent',
+              border: 'none',
+              color: '#8b3a3a',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center'
+              gap: '0.25rem',
+              fontSize: '0.875rem'
             }}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
               <polyline points="16 17 21 12 16 7" />
               <line x1="21" y1="12" x2="9" y2="12" />
             </svg>
-            <span style={{ position: 'absolute', width: '1px', height: '1px', padding: 0, margin: '-1px', overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap', borderWidth: 0 }}>Logout</span>
+            Logout
           </button>
         </div>
       </header>
-      
+
       <main style={{ 
         flex: 1, 
         maxWidth: '1200px', 
         margin: '0 auto', 
-        padding: '1rem',
-        width: '100%'
+        padding: '2rem',
+        width: '100%' 
       }}>
         <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
-          <h1 style={{ fontSize: '1.875rem', fontWeight: 'bold', color: '#e8d7b9', marginBottom: '0.5rem' }}>Welcome to the Arena</h1>
-          <p style={{ color: 'rgba(232, 215, 185, 0.7)' }}>Choose your battle, warrior</p>
+          <h1 style={{ fontSize: '1.875rem', fontWeight: 'bold', color: '#e8d7b9', marginBottom: '0.5rem' }}>Game Lobby</h1>
+          <p style={{ color: 'rgba(232, 215, 185, 0.7)' }}>Select a game mode to begin your adventure</p>
         </div>
 
         <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', 
-          gap: '1.5rem' 
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+          gap: '2rem'
         }}>
           {/* Tournament Card */}
           <div style={{ 
-            backgroundColor: 'rgba(232, 215, 185, 0.9)',
-            border: '2px solid rgba(139, 58, 58, 0.4)',
-            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            borderRadius: '0.5rem',
             overflow: 'hidden',
-            borderRadius: '0.125rem',
-            position: 'relative'
-          }}>
-            {/* Parchment texture overlay */}
+            position: 'relative',
+            border: '1px solid rgba(139, 58, 58, 0.4)',
+            transition: 'transform 0.2s, box-shadow 0.2s',
+            cursor: 'pointer',
+            height: '300px',
+            display: 'flex',
+            flexDirection: 'column'
+          }}
+          onClick={() => handleSelectGameMode('tournament')}
+          onMouseOver={(e) => {
+            e.currentTarget.style.transform = 'translateY(-5px)';
+            e.currentTarget.style.boxShadow = '0 10px 20px rgba(0, 0, 0, 0.3)';
+          }}
+          onMouseOut={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
+          >
             <div style={{ 
-              position: 'absolute',
-              inset: 0,
-              backgroundImage: 'url(https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-rYPTnW7311wD7QpxwJN46o1aBmZYlm.png)',
-              opacity: 0.2,
-              mixBlendMode: 'overlay',
-              pointerEvents: 'none'
-            }}></div>
-
-            <div style={{ 
-              background: 'linear-gradient(to right, rgba(139, 58, 58, 0.2), transparent)',
-              padding: '1.25rem 1.25rem 0.5rem',
+              backgroundImage: 'url(https://images.unsplash.com/photo-1519947486511-46149fa0a254?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80)',
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              height: '60%',
               position: 'relative'
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#8b3a3a', fontSize: '1.25rem', fontWeight: 'bold' }}>
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
-                  <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
-                  <path d="M4 22h16" />
-                  <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
-                  <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
-                  <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
-                </svg>
+              <div style={{ 
+                position: 'absolute',
+                inset: 0,
+                background: 'linear-gradient(to bottom, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.8))'
+              }}></div>
+              
+              <div style={{ 
+                position: 'absolute',
+                bottom: '1rem',
+                left: '1rem',
+                color: 'white',
+                fontWeight: 'bold',
+                fontSize: '1.5rem',
+                textShadow: '0 2px 4px rgba(0, 0, 0, 0.5)'
+              }}>
                 Tournament
               </div>
-              <div style={{ color: '#5a3e2a', fontSize: '0.875rem' }}>16-player bracket tournament</div>
             </div>
             
-            <div style={{ padding: '1.5rem 1.25rem 1.25rem', position: 'relative' }}>
+            <div style={{ padding: '1rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ color: '#e8d7b9', marginBottom: '0.5rem' }}>
+                Compete in a 16-player tournament bracket. Win your matches to advance to the finals.
+              </div>
+              
               <div style={{ 
-                position: 'relative',
-                aspectRatio: '16/9',
-                borderRadius: '0.125rem',
-                overflow: 'hidden',
-                marginBottom: '1rem',
-                border: '1px solid rgba(139, 58, 58, 0.3)'
+                marginTop: 'auto',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
               }}>
                 <div style={{ 
-                  position: 'absolute',
-                  inset: 0,
-                  backgroundImage: 'url(https://images.unsplash.com/photo-1612404730960-5c71577fca11?ixlib=rb-1.2.1&auto=format&fit=crop&w=600&q=80)',
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center'
-                }}></div>
-                <div style={{ 
-                  position: 'absolute',
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  background: 'linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent)',
-                  padding: '0.75rem'
+                  backgroundColor: 'rgba(139, 58, 58, 0.2)',
+                  color: '#e8d7b9',
+                  padding: '0.25rem 0.5rem',
+                  borderRadius: '0.25rem',
+                  fontSize: '0.875rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.25rem'
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#e8d7b9' }}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                      <circle cx="9" cy="7" r="4" />
-                      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-                      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                    </svg>
-                    <span style={{ fontSize: '0.875rem' }}>{playerCount.tournament}/16 players waiting</span>
-                  </div>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="9" cy="7" r="4"></circle>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                  </svg>
+                  {playerCount.tournament}/16 Players
+                </div>
+                
+                <div style={{ 
+                  color: '#8b3a3a',
+                  fontSize: '0.875rem',
+                  fontWeight: 'bold'
+                }}>
+                  PLAY NOW
                 </div>
               </div>
-              <p style={{ color: '#5a3e2a', fontSize: '0.875rem' }}>
-                Face off in a 16-player tournament bracket. Win your matches to advance to the finals and claim glory!
-              </p>
-            </div>
-            
-            <div style={{ padding: '0 1.25rem 1.25rem', position: 'relative' }}>
-              <button 
-                onClick={() => navigate('/character-selection', { state: { mode: 'tournament' } })}
-                style={{ 
-                  width: '100%',
-                  backgroundColor: '#8b3a3a',
-                  color: '#e8d7b9',
-                  border: '1px solid rgba(139, 58, 58, 0.5)',
-                  padding: '0.75rem 1.25rem',
-                  borderRadius: '0.25rem',
-                  fontWeight: 'bold',
-                  cursor: 'pointer',
-                  transition: 'background-color 0.2s'
-                }}
-                onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#6e2e2e'}
-                onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#8b3a3a'}
-              >
-                Join Tournament
-              </button>
             </div>
           </div>
-
+          
           {/* Battle Royale Card */}
           <div style={{ 
-            backgroundColor: 'rgba(232, 215, 185, 0.9)',
-            border: '2px solid rgba(139, 58, 58, 0.4)',
-            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            borderRadius: '0.5rem',
             overflow: 'hidden',
-            borderRadius: '0.125rem',
-            position: 'relative'
-          }}>
-            {/* Parchment texture overlay */}
+            position: 'relative',
+            border: '1px solid rgba(139, 58, 58, 0.4)',
+            transition: 'transform 0.2s, box-shadow 0.2s',
+            cursor: 'pointer',
+            height: '300px',
+            display: 'flex',
+            flexDirection: 'column'
+          }}
+          onClick={() => handleSelectGameMode('battle-royale')}
+          onMouseOver={(e) => {
+            e.currentTarget.style.transform = 'translateY(-5px)';
+            e.currentTarget.style.boxShadow = '0 10px 20px rgba(0, 0, 0, 0.3)';
+          }}
+          onMouseOut={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
+          >
             <div style={{ 
-              position: 'absolute',
-              inset: 0,
-              backgroundImage: 'url(https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-rYPTnW7311wD7QpxwJN46o1aBmZYlm.png)',
-              opacity: 0.2,
-              mixBlendMode: 'overlay',
-              pointerEvents: 'none'
-            }}></div>
-
-            <div style={{ 
-              background: 'linear-gradient(to right, rgba(26, 46, 53, 0.3), transparent)',
-              padding: '1.25rem 1.25rem 0.5rem',
+              backgroundImage: 'url(https://images.unsplash.com/photo-1542751371-adc38448a05e?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80)',
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              height: '60%',
               position: 'relative'
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#1a2e35', fontSize: '1.25rem', fontWeight: 'bold' }}>
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="m14.5 12.5-5-5 5 5z" />
-                  <path d="m18.5 16.5-5-5 5 5z" />
-                  <path d="m6.5 19.5 7-7-7 7z" />
-                  <path d="m16 7-4.5 4.5" />
-                  <path d="M21 11.5c-.5 1-1.5 2-2.5 2.75L16 16" />
-                  <path d="M3 19.5 16 7 3 19.5z" />
-                </svg>
+              <div style={{ 
+                position: 'absolute',
+                inset: 0,
+                background: 'linear-gradient(to bottom, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.8))'
+              }}></div>
+              
+              <div style={{ 
+                position: 'absolute',
+                bottom: '1rem',
+                left: '1rem',
+                color: 'white',
+                fontWeight: 'bold',
+                fontSize: '1.5rem',
+                textShadow: '0 2px 4px rgba(0, 0, 0, 0.5)'
+              }}>
                 Battle Royale
               </div>
-              <div style={{ color: '#5a3e2a', fontSize: '0.875rem' }}>40-player free-for-all battle</div>
             </div>
             
-            <div style={{ padding: '1.5rem 1.25rem 1.25rem', position: 'relative' }}>
+            <div style={{ padding: '1rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ color: '#e8d7b9', marginBottom: '0.5rem' }}>
+                Enter a massive 40-player battle royale. Be the last warrior standing to win.
+              </div>
+              
               <div style={{ 
-                position: 'relative',
-                aspectRatio: '16/9',
-                borderRadius: '0.125rem',
-                overflow: 'hidden',
-                marginBottom: '1rem',
-                border: '1px solid rgba(139, 58, 58, 0.3)'
+                marginTop: 'auto',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
               }}>
                 <div style={{ 
-                  position: 'absolute',
-                  inset: 0,
-                  backgroundImage: 'url(https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?ixlib=rb-1.2.1&auto=format&fit=crop&w=600&q=80)',
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center'
-                }}></div>
-                <div style={{ 
-                  position: 'absolute',
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  background: 'linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent)',
-                  padding: '0.75rem'
+                  backgroundColor: 'rgba(139, 58, 58, 0.2)',
+                  color: '#e8d7b9',
+                  padding: '0.25rem 0.5rem',
+                  borderRadius: '0.25rem',
+                  fontSize: '0.875rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.25rem'
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#e8d7b9' }}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                      <circle cx="9" cy="7" r="4" />
-                      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-                      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                    </svg>
-                    <span style={{ fontSize: '0.875rem' }}>{playerCount.battleRoyale}/40 players waiting</span>
-                  </div>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="9" cy="7" r="4"></circle>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                  </svg>
+                  {playerCount.battleRoyale}/40 Players
+                </div>
+                
+                <div style={{ 
+                  color: '#8b3a3a',
+                  fontSize: '0.875rem',
+                  fontWeight: 'bold'
+                }}>
+                  PLAY NOW
                 </div>
               </div>
-              <p style={{ color: '#5a3e2a', fontSize: '0.875rem' }}>
-                Enter a massive 40-player battle royale on a sprawling map. Be the last warrior standing to earn your place on the leaderboard!
-              </p>
+            </div>
+          </div>
+          
+          {/* Standard Match Card */}
+          <div style={{ 
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            borderRadius: '0.5rem',
+            overflow: 'hidden',
+            position: 'relative',
+            border: '1px solid rgba(139, 58, 58, 0.4)',
+            transition: 'transform 0.2s, box-shadow 0.2s',
+            cursor: 'pointer',
+            height: '300px',
+            display: 'flex',
+            flexDirection: 'column'
+          }}
+          onClick={() => handleSelectGameMode('standard')}
+          onMouseOver={(e) => {
+            e.currentTarget.style.transform = 'translateY(-5px)';
+            e.currentTarget.style.boxShadow = '0 10px 20px rgba(0, 0, 0, 0.3)';
+          }}
+          onMouseOut={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
+          >
+            <div style={{ 
+              backgroundImage: 'url(https://images.unsplash.com/photo-1531259683007-016a7b628fc3?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80)',
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              height: '60%',
+              position: 'relative'
+            }}>
+              <div style={{ 
+                position: 'absolute',
+                inset: 0,
+                background: 'linear-gradient(to bottom, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.8))'
+              }}></div>
+              
+              <div style={{ 
+                position: 'absolute',
+                bottom: '1rem',
+                left: '1rem',
+                color: 'white',
+                fontWeight: 'bold',
+                fontSize: '1.5rem',
+                textShadow: '0 2px 4px rgba(0, 0, 0, 0.5)'
+              }}>
+                Standard Match
+              </div>
             </div>
             
-            <div style={{ padding: '0 1.25rem 1.25rem', position: 'relative' }}>
-              <button 
-                onClick={() => navigate('/character-selection', { state: { mode: 'battle-royale' } })}
-                style={{ 
-                  width: '100%',
-                  backgroundColor: '#1a2e35',
+            <div style={{ padding: '1rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ color: '#e8d7b9', marginBottom: '0.5rem' }}>
+                Standard 1v1 match against an opponent of similar skill level. Perfect for practice.
+              </div>
+              
+              <div style={{ 
+                marginTop: 'auto',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <div style={{ 
+                  backgroundColor: 'rgba(139, 58, 58, 0.2)',
                   color: '#e8d7b9',
-                  border: '1px solid rgba(26, 46, 53, 0.5)',
-                  padding: '0.75rem 1.25rem',
+                  padding: '0.25rem 0.5rem',
                   borderRadius: '0.25rem',
-                  fontWeight: 'bold',
-                  cursor: 'pointer',
-                  transition: 'background-color 0.2s'
-                }}
-                onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#142228'}
-                onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#1a2e35'}
-              >
-                Join Battle Royale
-              </button>
+                  fontSize: '0.875rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.25rem'
+                }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="9" cy="7" r="4"></circle>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                  </svg>
+                  Always Available
+                </div>
+                
+                <div style={{ 
+                  color: '#8b3a3a',
+                  fontSize: '0.875rem',
+                  fontWeight: 'bold'
+                }}>
+                  PLAY NOW
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </main>
-      
+
       <footer style={{ 
         padding: '1rem', 
         textAlign: 'center', 
-        fontSize: '0.75rem', 
-        color: 'rgba(232, 215, 185, 0.6)', 
-        backgroundColor: 'rgba(26, 46, 53, 0.8)', 
-        borderTop: '1px solid rgba(139, 58, 58, 0.2)' 
+        color: 'rgba(255, 255, 255, 0.5)',
+        fontSize: '0.75rem'
       }}>
-        <p>Guild Clash &copy; {new Date().getFullYear()} | All rights reserved</p>
+        &copy; 2025 Guild Clash. All rights reserved.
       </footer>
     </div>
   );

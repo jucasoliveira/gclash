@@ -16,7 +16,10 @@ function Login() {
         const user = JSON.parse(userData);
         // Set the player's username in the window object for compatibility
         window.playerUsername = user.username;
-        navigate('/lobby');
+        window.playerId = user.id;
+        
+        // Navigate to character selection instead of lobby
+        navigate('/character-selection');
       } catch (error) {
         console.error('Error parsing user data:', error);
         localStorage.removeItem('guildClashUser');
@@ -47,11 +50,12 @@ function Login() {
       // Store user data in localStorage
       localStorage.setItem('guildClashUser', JSON.stringify(data));
 
-      // Set the player's username in the window object for compatibility
+      // Set the player's username and ID in the window object for compatibility
       window.playerUsername = data.username;
+      window.playerId = data.id;
 
-      // Navigate to lobby
-      navigate('/lobby');
+      // Navigate to character selection instead of lobby
+      navigate('/character-selection');
     } catch (error) {
       console.error('Login error:', error);
       setError(error.message || 'Login failed. Please try again.');

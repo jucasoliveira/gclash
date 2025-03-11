@@ -34,20 +34,18 @@ function Register() {
       const data = await response.json();
 
       if (!response.ok) {
-        // Check for validation errors
-        if (data.validationErrors) {
-          const errorMessages = [];
-          for (const field in data.validationErrors) {
-            errorMessages.push(`${field}: ${data.validationErrors[field]}`);
-          }
-          throw new Error(errorMessages.join(', '));
-        } else {
-          throw new Error(data.error || 'Registration failed');
-        }
+        throw new Error(data.error || 'Registration failed');
       }
 
-      // Navigate to login with username pre-filled
-      navigate('/', { state: { username } });
+      // Store user data in localStorage
+      localStorage.setItem('guildClashUser', JSON.stringify(data));
+
+      // Set the player's username and ID in the window object for compatibility
+      window.playerUsername = data.username;
+      window.playerId = data.id;
+
+      // Navigate to character selection
+      navigate('/character-selection');
     } catch (error) {
       console.error('Registration error:', error);
       setError(error.message || 'Registration failed. Please try again.');
@@ -110,7 +108,7 @@ function Register() {
             className="form-button"
             disabled={isLoading}
           >
-            {isLoading ? 'Registering...' : 'Register'}
+            {isLoading ? 'Creating Account...' : 'Register'}
           </button>
         </form>
         <div 
