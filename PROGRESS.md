@@ -944,6 +944,7 @@ Implemented a specialized 2km x 2km arena environment for competitive play with 
   - Implemented singleton pattern for map instances
   - Used the eventBus to signal when maps are ready
   - Added proper disposal of Three.js resources (geometries, materials, textures)
+  - Integrated with the renderer's event-based animation system
 
 - **User Interface Changes**:
 
@@ -974,6 +975,16 @@ Implemented a specialized 2km x 2km arena environment for competitive play with 
   - Added proper event listeners for tracking map ready events
   - Added safety checks to prevent mode changes during active games
 
+- **Bug Fixes and Optimizations**:
+
+  - Fixed animation system integration by using the event-based approach
+  - Replaced non-existent renderer.addToAnimationLoop with eventBus.on('renderer.beforeRender')
+  - Updated particle effects to use the event system for animations
+  - Improved cleanup process to prevent memory leaks
+  - Enhanced error handling for map transitions
+  - Optimized pickup collision detection
+  - Fixed health restoration UI updates
+
 - **Future Battle Royale Features**:
 
   - Plan to implement shrinking play area with damage outside the safe zone
@@ -984,3 +995,60 @@ Implemented a specialized 2km x 2km arena environment for competitive play with 
   - Will add spectator mode for eliminated players
   - Plan to implement leaderboard for battle royale mode
   - Will add special battle royale-specific sound effects and music
+
+### Step 19: Battle Royale Map Fixes and Improvements
+
+- **Fixed Animation System Integration**:
+
+  - Identified and fixed the error: "Uncaught TypeError: renderer.addToAnimationLoop is not a function"
+  - Replaced custom animation loop methods with the event-based system used by the renderer
+  - Updated the BattleRoyaleMap.js file to use eventBus.on('renderer.beforeRender') for animations
+  - Modified the \_updatePickups method to accept event data parameter
+  - Updated particle effect animations to use the event system
+  - Ensured proper cleanup of event listeners in the dispose method
+
+- **Enhanced Health Pickup System**:
+
+  - Improved collision detection reliability for health pickups
+  - Enhanced visual feedback when collecting health pickups
+  - Optimized particle effects for better performance
+  - Added proper error handling for pickup interactions
+  - Ensured health restoration works correctly with the UI
+  - Verified proper integration with the player health system
+
+- **Code Quality Improvements**:
+
+  - Added comprehensive error handling throughout the Battle Royale map code
+  - Improved code comments and documentation
+  - Enhanced resource cleanup to prevent memory leaks
+  - Optimized rendering performance for large maps
+  - Followed consistent coding patterns with the rest of the codebase
+  - Used proper event listener management to prevent memory leaks
+
+- **Testing and Validation**:
+
+  - Verified Battle Royale mode works correctly from the UI
+  - Tested health pickup collection and healing effects
+  - Confirmed proper map loading and cleanup when switching modes
+  - Validated tree placement and rendering
+  - Tested performance with many objects in the scene
+  - Verified compatibility with different character classes
+  - Confirmed proper integration with the camera system
+
+- **Documentation Updates**:
+
+  - Added detailed comments throughout the BattleRoyaleMap.js file
+  - Updated PROGRESS.md with comprehensive documentation
+  - Added JSDoc comments for all methods
+  - Documented the event-based animation system integration
+  - Added notes about future improvements and optimizations
+  - Created clear explanations of the health pickup system
+
+- **Technical Insights**:
+
+  - Learned that the renderer uses an event-based animation system rather than direct method calls
+  - Discovered the importance of proper event listener cleanup to prevent memory leaks
+  - Identified the need for consistent animation system usage across components
+  - Recognized the value of the eventBus for component communication
+  - Understood the renderer's animation cycle and how to integrate with it
+  - Appreciated the importance of proper error handling in 3D applications
