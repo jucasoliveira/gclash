@@ -14,6 +14,8 @@ class Renderer {
     this.isInitialized = false;
     this.objects = new Map();
     this.lastTime = null; // For delta time calculation
+    this.followTarget = null; // Entity to follow with camera
+    this.isFollowingPlayer = false; // Whether camera is in follow mode
     
     // Binding methods
     this.render = this.render.bind(this);
@@ -105,26 +107,43 @@ class Renderer {
   /**
    * Update camera position for isometric view
    * @param {Object} offset - Optional camera offset (x, y)
+   * @param {boolean} smooth - Whether to use smooth interpolation
    */
-  updateCameraPosition(offset = { x: 0, y: 0 }) {
+  updateCameraPosition(offset = { x: 0, y: 0 }, smooth = true) {
     // Classic isometric angle
     const isometricAngle = Math.PI / 4; // 45 degrees
     const elevationAngle = Math.atan(1 / Math.sqrt(2)); // ~35.264 degrees
     const distance = 20;
     
-    // Calculate position based on angles and offset
-    this.camera.position.x = distance * Math.cos(isometricAngle) + offset.x;
-    this.camera.position.z = distance * Math.sin(isometricAngle) + offset.y;
-    this.camera.position.y = distance * Math.sin(elevationAngle);
+    // Calculate target position
+    const targetX = distance * Math.cos(isometricAngle) + offset.x;
+    const targetZ = distance * Math.sin(isometricAngle) + offset.y;
+    const targetY = distance * Math.sin(elevationAngle);
     
-    // Update camera target
-    const target = new THREE.Vector3(offset.x, 0, offset.y);
-    this.camera.lookAt(target);
+    // If smooth interpolation is enabled and we're following the player
+    if (smooth && this.isFollowingPlayer && this.camera.position.x !== undefined) {
+      // Interpolation factor (0.1 gives a nice smooth follow without being too slow)
+      const lerpFactor = 0.1;
+      
+      // Interpolate camera position
+      this.camera.position.x += (targetX - this.camera.position.x) * lerpFactor;
+      this.camera.position.z += (targetZ - this.camera.position.z) * lerpFactor;
+      this.camera.position.y += (targetY - this.camera.position.y) * lerpFactor;
+    } else {
+      // Immediate positioning if not smooth or first positioning
+      this.camera.position.x = targetX;
+      this.camera.position.z = targetZ;
+      this.camera.position.y = targetY;
+    }
+    
+    // Update camera target (what the camera is looking at)
+    const lookTarget = new THREE.Vector3(offset.x, 0, offset.y);
+    this.camera.lookAt(lookTarget);
     
     // Emit camera update event
     eventBus.emit('camera.updated', {
       position: this.camera.position.clone(),
-      target
+      target: lookTarget
     });
   }
 
@@ -208,6 +227,24 @@ class Renderer {
   }
 
   /**
+   * Set the camera to follow a target entity (Diablo-style)
+   * @param {Entity} target - The entity to follow, typically the player
+   * @param {boolean} follow - Whether to enable follow mode
+   */
+  setFollowTarget(target, follow = true) {
+    this.followTarget = target;
+    this.isFollowingPlayer = follow;
+    
+    // Emit event for other systems to react
+    eventBus.emit('camera.followModeChanged', { 
+      isFollowing: follow, 
+      target: target ? target.id : null 
+    });
+    
+    return this;
+  }
+
+  /**
    * Render loop
    */
   render(timestamp) {
@@ -217,6 +254,12 @@ class Renderer {
     const now = timestamp || performance.now();
     const deltaTime = this.lastTime ? (now - this.lastTime) / 1000 : 0;
     this.lastTime = now;
+    
+    // Update camera position if following a target
+    if (this.isFollowingPlayer && this.followTarget) {
+      const target = this.followTarget.position;
+      this.updateCameraPosition({ x: target.x, y: target.z });
+    }
     
     // Emit before render event for other systems to update
     eventBus.emit('renderer.beforeRender', { deltaTime, renderer: this });

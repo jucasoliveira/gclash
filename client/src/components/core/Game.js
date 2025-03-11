@@ -142,11 +142,21 @@ class Game {
    * @private
    */
   _setupUIEvents() {
+    console.log('Setting up UI event listeners...');
+    
     // Character selection
     const clerkClass = document.getElementById('clerk-class');
     const warriorClass = document.getElementById('warrior-class');
     const rangerClass = document.getElementById('ranger-class');
     const startButton = document.getElementById('start-game');
+    
+    // Log whether we found the elements
+    console.log('Found UI elements:', {
+      clerkClass: !!clerkClass,
+      warriorClass: !!warriorClass,
+      rangerClass: !!rangerClass,
+      startButton: !!startButton
+    });
     
     // Game mode selection
     const standardModeBtn = document.getElementById('standard-mode');
@@ -157,15 +167,24 @@ class Game {
     
     // Set up class selection listeners
     if (clerkClass) {
-      clerkClass.addEventListener('click', () => this._handleClassSelection('CLERK'));
+      clerkClass.addEventListener('click', () => {
+        console.log('Clerk class clicked');
+        this._handleClassSelection('CLERK');
+      });
     }
     
     if (warriorClass) {
-      warriorClass.addEventListener('click', () => this._handleClassSelection('WARRIOR'));
+      warriorClass.addEventListener('click', () => {
+        console.log('Warrior class clicked');
+        this._handleClassSelection('WARRIOR');
+      });
     }
     
     if (rangerClass) {
-      rangerClass.addEventListener('click', () => this._handleClassSelection('RANGER'));
+      rangerClass.addEventListener('click', () => {
+        console.log('Ranger class clicked');
+        this._handleClassSelection('RANGER');
+      });
     }
     
     // Set up start game button
@@ -202,6 +221,8 @@ class Game {
    * @private
    */
   _handleClassSelection(classType) {
+    console.log(`_handleClassSelection called with class: ${classType}`);
+    
     if (!CHARACTER_CLASSES[classType]) {
       console.error(`Invalid class type: ${classType}`);
       return;
@@ -248,19 +269,12 @@ class Game {
       return;
     }
     
-    // Hide character selection
-    this._hideCharacterSelection();
+    // Disable arrow key controls for camera when using follow mode
+    // We'll still keep the keys registered but they won't do anything
+    // when follow mode is active
     
-    // Load the appropriate map based on game mode
-    this._loadMap(this.gameMode);
-    
-    // Start the game
+    // Start the game with selected class
     this.start(this.selectedClass);
-    
-    // Show game UI
-    this._showGameUI();
-    
-    console.log(`Started game with ${this.selectedClass} class in ${this.gameMode} mode`);
   }
 
   /**
@@ -341,20 +355,53 @@ class Game {
   }
 
   /**
-   * Start the game with a selected class
+   * Start the game
    * @param {string} classType - Selected character class
-   * @returns {Promise} - Resolves when game starts
    */
   async start(classType) {
-    if (this.isRunning) {
-      console.warn('Game is already running');
+    if (!classType && !this.selectedClass) {
+      console.error('No class selected');
       return;
     }
     
-    console.log(`Starting game with class: ${classType}`);
+    // Use provided class type or fallback to selected class
+    const selectedClass = classType || this.selectedClass;
     
-    // Set up initialization
+    console.log(`Starting game with class: ${selectedClass}`);
+    
+    // Hide character selection UI
+    this._hideCharacterSelection();
+    
+    // Show game UI
+    this._showGameUI();
+    
+    // Load appropriate map
+    await this._loadMap(this.gameMode);
+    
+    // Set state to playing
+    this.state = 'playing';
+    
+    // Generate a unique player ID
+    const playerId = `player_${Date.now()}`;
+    
+    // Get class stats
+    const classStats = CHARACTER_CLASSES[selectedClass];
+    if (!classStats) {
+      console.error(`Invalid class type: ${selectedClass}`);
+      return;
+    }
+    
+    // Create player entity - use createPlayer instead of createEntity
+    console.log('Creating player entity...');
+    this.player = entityManager.createPlayer(selectedClass, playerId);
+    
+    // Enable camera follow mode (Diablo-style)
+    this.renderer.setFollowTarget(this.player, true);
+    console.log('Camera follow mode enabled - Diablo-style');
+    
+    // Start game systems
     this.isRunning = true;
+    renderer.startRendering();
     
     // Show loading feedback
     const loadingElement = document.createElement('div');
@@ -402,10 +449,6 @@ class Game {
         });
       }
       
-      // Create player with selected class and store reference
-      console.log(`Creating player with class: ${classType}`);
-      this.player = entityManager.createPlayer(classType);
-      
       // Set player ID in the HUD
       if (this.player && uiManager.components.hud) {
         uiManager.components.hud.id = this.player.id;
@@ -422,7 +465,7 @@ class Game {
       console.log('Joining game with player data');
       webSocketManager.joinGame({
         position: this.player.position,
-        class: classType,
+        class: selectedClass,
         stats: this.player.stats,
         type: 'player'
       });
@@ -435,12 +478,6 @@ class Game {
       };
       
       eventBus.once('network.joinFailed', joinFailureHandler);
-      
-      // Start rendering
-      renderer.startRendering();
-      
-      // Update state
-      this.state = 'playing';
       
       // Emit event
       eventBus.emit('game.started');

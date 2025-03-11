@@ -1,33 +1,75 @@
 // Import polyfills first
 import './webrtc-polyfills.js';
+import * as THREE from 'three';
 
-// Then import the game
+// Then import the game (it's a singleton instance, not a class)
 import game from './components/core/Game.js';
 import tournamentMap from './components/world/TournamentMap.js';
 import grid from './components/world/Grid.js';
 
-// Expose game globally so Player.js can access it directly for health updates
-window.game = game;
+// Initialize game when DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('DOM content loaded. Initializing game...');
+  
+  // Get the canvas element
+  const canvas = document.getElementById('game-canvas');
+  if (!canvas) {
+    console.error('Canvas element not found. Make sure you have a canvas with id "game-canvas" in your HTML.');
+    return;
+  }
+  
+  // Initialize the game singleton with the canvas
+  game.init(canvas);
+  
+  // Make game globally available for debugging and access from other components
+  window.game = game;
+  
+  console.log('Game initialized and ready.');
+  
+  // Set up direct health update monitoring
+  document.addEventListener('player-health-changed', (event) => {
+    if (event.detail && event.detail.health !== undefined) {
+      console.log('GLOBAL HEALTH EVENT: Forcing UI update from global event');
+      game.updateHealthUI(event.detail.health, event.detail.maxHealth);
+    }
+  });
+  
+  // Listen for player death events
+  document.addEventListener('player-died', (event) => {
+    console.log('GLOBAL DEATH EVENT:', event.detail);
+    if (window.showDeathScreen && event.detail && event.detail.attackerId) {
+      window.showDeathScreen(event.detail.attackerId);
+    }
+  });
+});
 
 // Expose tournament map and utilities for testing
-window.tournamentMap = tournamentMap;
 window.startTournament = () => {
   console.log('Starting tournament mode from console...');
-  game.startTournamentMode()
-    .then(() => console.log('Tournament started successfully'))
-    .catch((err) => console.error('Error starting tournament:', err));
+  if (window.game && typeof window.game.startTournamentMode === 'function') {
+    window.game.startTournamentMode()
+      .then(() => console.log('Tournament started successfully'))
+      .catch((err) => console.error('Error starting tournament:', err));
+  } else {
+    console.error('Game instance not available or missing startTournamentMode method');
+  }
 };
 
 // Function to just test viewing the tournament map
 window.viewTournamentMap = () => {
   console.log('Loading tournament map for viewing...');
+  if (!window.game) {
+    console.error('Game instance not available');
+    return;
+  }
+  
   // Hide grid if visible
-  if (game.currentMap === grid) {
-    game.currentMap.dispose();
+  if (window.game.currentMap === grid) {
+    window.game.currentMap.dispose();
   }
   // Initialize tournament map
   tournamentMap.init();
-  game.currentMap = tournamentMap;
+  window.game.currentMap = tournamentMap;
   console.log('Tournament map loaded');
 };
 
@@ -248,40 +290,10 @@ window.showDeathScreen = (attackerId) => {
         deathScreen.style.display = 'none';
         
         // Respawn player
-        if (game.player && typeof game.player._respawn === 'function') {
-          game.player._respawn();
+        if (Game.player && typeof Game.player._respawn === 'function') {
+          Game.player._respawn();
         }
       }, 500);
     }
   }, 1000);
 };
-
-// Initialize the game when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
-  const canvas = document.getElementById('game-canvas');
-  if (canvas) {
-    // Initialize game with the canvas element
-    game.init(canvas);
-    
-    // Set up direct health update monitoring
-    // This event listener will monitor all health changes and force UI updates
-    document.addEventListener('player-health-changed', (event) => {
-      if (event.detail && event.detail.health !== undefined) {
-        console.log('GLOBAL HEALTH EVENT: Forcing UI update from global event');
-        game.updateHealthUI(event.detail.health, event.detail.maxHealth);
-      }
-    });
-    
-    // Listen for player death events
-    document.addEventListener('player-died', (event) => {
-      console.log('GLOBAL DEATH EVENT:', event.detail);
-      if (window.showDeathScreen && event.detail && event.detail.attackerId) {
-        window.showDeathScreen(event.detail.attackerId);
-      }
-    });
-    
-    console.log('Game setup complete - health bar system initialized');
-  } else {
-    console.error('Game canvas not found');
-  }
-});

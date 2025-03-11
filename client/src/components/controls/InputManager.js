@@ -26,8 +26,12 @@ class InputManager {
       'camera.up': ['ArrowUp'],
       'camera.down': ['ArrowDown'],
       'camera.left': ['ArrowLeft'],
-      'camera.right': ['ArrowRight']
+      'camera.right': ['ArrowRight'],
+      'camera.toggleFollow': ['f', 'F']
     };
+    
+    // Camera state
+    this.isCameraFollowModeEnabled = false;
     
     // Binding methods
     this.handleKeyDown = this.handleKeyDown.bind(this);
@@ -36,6 +40,7 @@ class InputManager {
     this.handleMouseDown = this.handleMouseDown.bind(this);
     this.handleMouseUp = this.handleMouseUp.bind(this);
     this.handleClick = this.handleClick.bind(this);
+    this.toggleCameraFollowMode = this.toggleCameraFollowMode.bind(this);
     
     // Initialization flag
     this.isInitialized = false;
@@ -55,6 +60,15 @@ class InputManager {
     window.addEventListener('mousedown', this.handleMouseDown);
     window.addEventListener('mouseup', this.handleMouseUp);
     document.addEventListener('click', this.handleClick);
+    
+    // Listen for camera follow mode changes
+    eventBus.on('camera.followModeChanged', (data) => {
+      this.isCameraFollowModeEnabled = data.isFollowing;
+      console.log(`Camera follow mode ${data.isFollowing ? 'enabled' : 'disabled'}`);
+    });
+    
+    // Set up special key handlers - use the correct event format
+    eventBus.on('input.camera.toggleFollow.start', this.toggleCameraFollowMode);
     
     this.isInitialized = true;
     return this;
@@ -145,6 +159,20 @@ class InputManager {
    * @param {MouseEvent} event - Mouse event
    */
   handleClick(event) {
+    console.log('Click event target:', event.target);
+    
+    // Check if the click was on a character selection element
+    const isCharacterSelectionClick = 
+      event.target.closest('.character-class') ||
+      event.target.closest('#start-game') ||
+      event.target.closest('.mode-button');
+    
+    if (isCharacterSelectionClick) {
+      console.log('Character selection click detected - not emitting event bus event');
+      // Don't emit events for character selection clicks
+      return;
+    }
+    
     // Calculate normalized device coordinates
     const ndcX = (event.clientX / window.innerWidth) * 2 - 1;
     const ndcY = -(event.clientY / window.innerHeight) * 2 + 1;
@@ -191,21 +219,28 @@ class InputManager {
   }
 
   /**
-   * Emit events for key bindings
+   * Emit binding events for a key
    * @param {string} key - Key that was pressed/released
-   * @param {boolean} isDown - Whether the key is down
+   * @param {boolean} isDown - Whether the key was pressed down or released
+   * @private
    */
   emitBindingEvents(key, isDown) {
-    // Check all bindings
-    Object.entries(this.keyBindings).forEach(([action, keys]) => {
+    // For each binding, check if it includes this key
+    for (const [action, keys] of Object.entries(this.keyBindings)) {
       if (keys.includes(key)) {
+        // Skip camera controls if in follow mode
+        if (this.isCameraFollowModeEnabled && action.startsWith('camera.')) {
+          continue;
+        }
+        
+        // Use the original event format that the rest of the code expects
         const eventName = isDown 
           ? `input.${action}.start` 
           : `input.${action}.end`;
         
         eventBus.emit(eventName, { key, action });
       }
-    });
+    }
   }
 
   /**
@@ -264,6 +299,41 @@ class InputManager {
     document.removeEventListener('click', this.handleClick);
     
     this.isInitialized = false;
+  }
+
+  /**
+   * Toggle camera follow mode on/off
+   */
+  toggleCameraFollowMode() {
+    // Get current game instance from window
+    const game = window.game;
+    if (!game || !game.player || !game.renderer) {
+      console.warn('Cannot toggle camera follow mode: game, player or renderer not available');
+      return;
+    }
+    
+    // Toggle the follow mode
+    const newFollowMode = !this.isCameraFollowModeEnabled;
+    game.renderer.setFollowTarget(game.player, newFollowMode);
+    
+    // Show feedback to user
+    const message = document.createElement('div');
+    message.textContent = `Camera follow mode ${newFollowMode ? 'enabled' : 'disabled'}`;
+    message.style.position = 'absolute';
+    message.style.bottom = '20px';
+    message.style.left = '50%';
+    message.style.transform = 'translateX(-50%)';
+    message.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+    message.style.color = 'white';
+    message.style.padding = '10px';
+    message.style.borderRadius = '5px';
+    message.style.zIndex = '1000';
+    document.body.appendChild(message);
+    
+    // Remove message after 2 seconds
+    setTimeout(() => {
+      document.body.removeChild(message);
+    }, 2000);
   }
 }
 
