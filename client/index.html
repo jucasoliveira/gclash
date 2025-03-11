@@ -429,6 +429,213 @@
             width: 0%;
             transition: width 0.1s linear;
         }
+        
+        /* Tournament UI styles */
+        .tournament-options {
+            background-color: rgba(0, 0, 0, 0.7);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+            color: white;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        
+        .tournament-header {
+            text-align: center;
+            margin-bottom: 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            padding-bottom: 10px;
+        }
+        
+        .tournament-header h3 {
+            color: #f1c40f;
+            margin-bottom: 5px;
+        }
+        
+        .tournament-description {
+            color: #ccc;
+            font-size: 0.9em;
+        }
+        
+        .tournament-actions {
+            display: flex;
+            justify-content: space-between;
+            gap: 30px;
+        }
+        
+        .create-tournament, .join-tournament {
+            flex: 1;
+            background-color: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 5px;
+        }
+        
+        .create-tournament h4, .join-tournament h4 {
+            color: #f1c40f;
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        
+        .input-group {
+            display: flex;
+            margin-top: 10px;
+        }
+        
+        .input-group input {
+            flex: 1;
+            padding: 10px;
+            border-radius: 4px 0 0 4px;
+            border: none;
+            background-color: #333;
+            color: white;
+        }
+        
+        .input-group .create-btn {
+            padding: 10px 15px;
+            border-radius: 0 4px 4px 0;
+            border: none;
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        .input-group button:hover {
+            background-color: #45a049;
+        }
+        
+        .tournaments-list {
+            margin-top: 10px;
+            max-height: 150px;
+            overflow-y: auto;
+            background-color: #333;
+            border-radius: 4px;
+            padding: 5px;
+        }
+        
+        .tournament-item {
+            padding: 10px;
+            margin-bottom: 5px;
+            background-color: #444;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .tournament-item:hover {
+            background-color: #555;
+        }
+        
+        .tournament-item button {
+            padding: 6px 12px;
+            border-radius: 4px;
+            border: none;
+            background-color: #3498db;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        .tournament-item button:hover {
+            background-color: #2980b9;
+        }
+        
+        .tournament-item button:disabled {
+            background-color: #cccccc;
+            color: #666666;
+            cursor: not-allowed;
+        }
+        
+        .tournament-status {
+            margin-top: 15px;
+            padding: 12px;
+            background-color: rgba(0, 0, 0, 0.5);
+            border-radius: 4px;
+            text-align: center;
+            font-weight: bold;
+            color: #f1c40f;
+        }
+        
+        .tournament-instructions {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            font-size: 0.9em;
+            color: #ccc;
+        }
+        
+        .tournament-instructions p {
+            margin: 5px 0;
+        }
+        
+        .no-tournaments {
+            padding: 15px;
+            text-align: center;
+            color: #999;
+            font-style: italic;
+        }
+        
+        .tournament-info {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .tournament-name {
+            font-weight: bold;
+        }
+        
+        .tournament-players {
+            font-size: 0.8em;
+            color: #aaa;
+        }
+        
+        .start-tournament-btn {
+            padding: 10px 20px;
+            border-radius: 4px;
+            border: none;
+            background-color: #ff9800;
+            color: white;
+            cursor: pointer;
+            margin-top: 10px;
+            font-weight: bold;
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        
+        .start-tournament-btn:hover {
+            background-color: #e68a00;
+        }
+        
+        /* Make start game button more prominent */
+        .start-button {
+            background-color: #f1c40f;
+            color: #000;
+            border: none;
+            padding: 15px 30px;
+            font-size: 1.2rem;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: none;
+            margin-top: 20px;
+            font-weight: bold;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        }
+        
+        .start-button:hover {
+            background-color: #f39c12;
+            transform: scale(1.05);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
+        }
+        
+        .start-button.visible {
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -502,6 +709,36 @@
             </div>
         </div>
         
+        <!-- Tournament Options (hidden by default) -->
+        <div id="tournament-options" class="tournament-options" style="display: none;">
+            <div class="tournament-header">
+                <h3>Tournament Mode</h3>
+                <p class="tournament-description">Create or join a tournament with up to 16 players.</p>
+            </div>
+            <div class="tournament-actions">
+                <div class="create-tournament">
+                    <h4>Create New Tournament</h4>
+                    <div class="input-group">
+                        <input type="text" id="tournament-name" placeholder="Tournament Name">
+                        <button id="create-tournament-btn" class="create-btn">Create</button>
+                    </div>
+                </div>
+                <div class="join-tournament">
+                    <h4>Available Tournaments</h4>
+                    <div id="tournaments-list" class="tournaments-list">
+                        <div class="no-tournaments">No tournaments available</div>
+                    </div>
+                </div>
+            </div>
+            <div id="tournament-status" class="tournament-status">
+                <!-- Tournament status will be shown here -->
+            </div>
+            <div class="tournament-instructions">
+                <p>First select your character class above, then create or join a tournament.</p>
+                <p>Once in a tournament, press the "Start Game" button below to begin when ready.</p>
+            </div>
+        </div>
+        
         <div class="classes">
             <div class="character-class" id="clerk-class">
                 <div class="class-icon clerk-icon"></div>
@@ -533,7 +770,7 @@
                 </div>
             </div>
         </div>
-        <button class="start-button" id="start-game">Start Game</button>
+        <button id="start-game" class="start-button">Start Game</button>
     </div>
     
     <!-- In-game UI -->

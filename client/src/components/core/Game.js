@@ -63,6 +63,12 @@ class Game {
     // Set up UI event listeners
     this._setupUIEvents();
     
+    // Set up tournament events
+    this._setupTournamentEvents();
+    
+    // Set up event handlers for tournament events
+    this._setupTournamentEventHandlers();
+    
     // Set up health pickup handler
     this._setupHealthPickupHandler();
     
@@ -205,6 +211,9 @@ class Game {
         battleRoyaleModeBtn.classList.remove('selected');
         this.gameMode = 'standard';
         console.log('Standard mode selected');
+        
+        // Hide tournament options
+        this._hideTournamentOptions();
       });
     }
     
@@ -215,6 +224,9 @@ class Game {
         battleRoyaleModeBtn.classList.remove('selected');
         this.gameMode = 'tournament';
         console.log('Tournament mode selected');
+        
+        // Show tournament options
+        this._showTournamentOptions();
       });
     }
     
@@ -225,8 +237,14 @@ class Game {
         tournamentModeBtn.classList.remove('selected');
         this.gameMode = 'battleRoyale';
         console.log('Battle Royale mode selected');
+        
+        // Hide tournament options
+        this._hideTournamentOptions();
       });
     }
+    
+    // Set up tournament UI events
+    this._setupTournamentEvents();
     
     // Hide character selection initially
     this._hideCharacterSelection();
@@ -286,9 +304,25 @@ class Game {
       return;
     }
     
-    // Disable arrow key controls for camera when using follow mode
-    // We'll still keep the keys registered but they won't do anything
-    // when follow mode is active
+    console.log('Starting game with selected class:', this.selectedClass);
+    
+    // If we're in tournament mode and have joined a tournament, make sure player data is set correctly
+    if (this.gameMode === 'tournament' && this.currentTournamentId) {
+      console.log('Starting game in tournament mode with tournament ID:', this.currentTournamentId);
+      
+      // Make sure the network manager has the correct player data
+      if (this.networkManager) {
+        // Update player data with selected class
+        const playerData = {
+          username: window.playerUsername || `Player_${Date.now()}`,
+          characterClass: this.selectedClass,
+          tournamentId: this.currentTournamentId
+        };
+        
+        // Store player data in network manager
+        this.networkManager.playerData = playerData;
+      }
+    }
     
     // Start the game with selected class
     this.start(this.selectedClass);
@@ -302,6 +336,41 @@ class Game {
     const characterSelection = document.getElementById('character-selection');
     if (characterSelection) {
       characterSelection.style.display = 'flex';
+      
+      // Connect to the WebSocket server when character selection is shown
+      if (webSocketManager && !webSocketManager.connected) {
+        console.log('Connecting to WebSocket server from character selection...');
+        
+        // Show connection status in the tournament status area
+        const tournamentStatus = document.getElementById('tournament-status');
+        if (tournamentStatus) {
+          tournamentStatus.innerHTML = 'Connecting to server...';
+        }
+        
+        webSocketManager.connect()
+          .then(() => {
+            console.log('Connected to WebSocket server from character selection');
+            
+            // Update tournament status
+            if (tournamentStatus) {
+              tournamentStatus.innerHTML = 'Connected to server. You can now create or join tournaments.';
+            }
+            
+            // Enable tournament creation button
+            const createTournamentBtn = document.getElementById('create-tournament-btn');
+            if (createTournamentBtn) {
+              createTournamentBtn.disabled = false;
+            }
+          })
+          .catch(error => {
+            console.error('Failed to connect to WebSocket server:', error);
+            
+            // Update tournament status
+            if (tournamentStatus) {
+              tournamentStatus.innerHTML = 'Failed to connect to server. Tournament features may not work.';
+            }
+          });
+      }
     }
   }
 
@@ -974,6 +1043,565 @@ class Game {
     
     // Play heal sound (if we had audio)
     // audioManager.play('heal');
+  }
+
+  /**
+   * Set up tournament-related event listeners
+   * @private
+   */
+  _setupTournamentEvents() {
+    console.log('Setting up tournament events');
+    
+    // Get UI elements
+    const tournamentModeBtn = document.getElementById('tournament-mode');
+    const standardModeBtn = document.getElementById('standard-mode');
+    const battleRoyaleModeBtn = document.getElementById('battle-royale-mode');
+    const tournamentOptions = document.getElementById('tournament-options');
+    const createTournamentBtn = document.getElementById('create-tournament-btn');
+    const tournamentNameInput = document.getElementById('tournament-name');
+    
+    // Set up mode selection
+    if (tournamentModeBtn) {
+      tournamentModeBtn.addEventListener('click', () => {
+        console.log('Tournament mode selected');
+        
+        // Update button states
+        tournamentModeBtn.classList.add('selected');
+        if (standardModeBtn) standardModeBtn.classList.remove('selected');
+        if (battleRoyaleModeBtn) battleRoyaleModeBtn.classList.remove('selected');
+        
+        // Show tournament options
+        this._showTournamentOptions();
+        
+        // Set game mode
+        this.gameMode = 'tournament';
+      });
+    }
+    
+    // Set up tournament creation
+    if (createTournamentBtn && tournamentNameInput) {
+      createTournamentBtn.addEventListener('click', () => {
+        const tournamentName = tournamentNameInput.value.trim();
+        
+        if (!tournamentName) {
+          this._updateTournamentStatus('Please enter a tournament name');
+          return;
+        }
+        
+        this._createTournament(tournamentName);
+        
+        // Clear input field after creating tournament
+        tournamentNameInput.value = '';
+      });
+    }
+    
+    // Listen for network connection events
+    eventBus.on('network.connected', () => {
+      console.log('Network connected, enabling tournament creation');
+      
+      // Enable the create tournament button when connection is established
+      if (createTournamentBtn) {
+        createTournamentBtn.disabled = false;
+        createTournamentBtn.textContent = 'Create';
+      }
+      
+      // Show connected status in the tournament status area
+      const tournamentStatus = document.getElementById('tournament-status');
+      if (tournamentStatus) {
+        tournamentStatus.innerHTML = 'Connected to server. You can now create or join tournaments.';
+      }
+      
+      // Request active tournaments list
+      if (this.networkManager) {
+        // Register handler for active tournaments
+        this.networkManager.registerMessageHandler('activeTournaments', (data) => {
+          console.log('Active tournaments received:', data);
+          eventBus.emit('tournament.list', data);
+        });
+      }
+    });
+    
+    // Register WebSocket message handlers
+    if (this.networkManager) {
+      // Tournament created handler
+      this.networkManager.registerMessageHandler('tournamentCreated', (data) => {
+        console.log('Tournament created message received:', data);
+        eventBus.emit('tournament.created', data);
+      });
+      
+      // Tournament joined handler
+      this.networkManager.registerMessageHandler('tournamentJoined', (data) => {
+        console.log('Tournament joined message received:', data);
+        eventBus.emit('tournament.joined', data);
+      });
+      
+      // New tournament handler
+      this.networkManager.registerMessageHandler('newTournament', (data) => {
+        console.log('New tournament message received:', data);
+        eventBus.emit('tournament.new', data);
+      });
+      
+      // Tournament updated handler
+      this.networkManager.registerMessageHandler('tournamentUpdated', (data) => {
+        console.log('Tournament updated message received:', data);
+        eventBus.emit('tournament.playerCount', data);
+      });
+    }
+  }
+  
+  /**
+   * Show tournament options UI
+   * @private
+   */
+  _showTournamentOptions() {
+    const tournamentOptions = document.getElementById('tournament-options');
+    if (tournamentOptions) {
+      tournamentOptions.style.display = 'block';
+      
+      // Check if already connected and enable the create tournament button
+      const createTournamentBtn = document.getElementById('create-tournament-btn');
+      if (createTournamentBtn) {
+        if (webSocketManager && webSocketManager.connected) {
+          createTournamentBtn.disabled = false;
+          
+          // Update tournament status
+          const tournamentStatus = document.getElementById('tournament-status');
+          if (tournamentStatus) {
+            tournamentStatus.innerHTML = 'Connected to server. You can now create or join tournaments.';
+          }
+        } else {
+          createTournamentBtn.disabled = true;
+          
+          // Update tournament status
+          const tournamentStatus = document.getElementById('tournament-status');
+          if (tournamentStatus) {
+            tournamentStatus.innerHTML = 'Connecting to server...';
+          }
+        }
+      }
+    }
+  }
+  
+  /**
+   * Hide tournament options UI
+   * @private
+   */
+  _hideTournamentOptions() {
+    const tournamentOptions = document.getElementById('tournament-options');
+    if (tournamentOptions) {
+      tournamentOptions.style.display = 'none';
+    }
+  }
+  
+  /**
+   * Create a new tournament
+   * @param {string} tournamentName - The name of the tournament
+   * @private
+   */
+  _createTournament(tournamentName) {
+    console.log('Creating tournament:', tournamentName);
+    
+    // Make sure we have a network manager
+    if (!this.networkManager) {
+      console.error('Cannot create tournament: Network manager not initialized');
+      this._updateTournamentStatus('Error: Cannot connect to server. Please refresh and try again.');
+      return;
+    }
+    
+    // Make sure we have a character class selected
+    if (!this.selectedClass) {
+      console.warn('No character class selected. Highlighting character selection area...');
+      
+      // Update tournament status
+      this._updateTournamentStatus('Please select a character class first!');
+      
+      // Highlight the character selection area
+      const characterClasses = document.querySelector('.classes');
+      if (characterClasses) {
+        characterClasses.style.border = '2px solid #f1c40f';
+        characterClasses.style.boxShadow = '0 0 10px rgba(241, 196, 15, 0.7)';
+        
+        // Reset highlight after a few seconds
+        setTimeout(() => {
+          characterClasses.style.border = '';
+          characterClasses.style.boxShadow = '';
+        }, 3000);
+      }
+      
+      return;
+    }
+    
+    // Disable the create button while we're creating the tournament
+    const createTournamentBtn = document.getElementById('create-tournament-btn');
+    if (createTournamentBtn) {
+      createTournamentBtn.disabled = true;
+      createTournamentBtn.textContent = 'Creating...';
+    }
+    
+    // Update status
+    this._updateTournamentStatus('Creating tournament...');
+    
+    // Create tournament data
+    const tournamentData = {
+      name: tournamentName,
+      tier: 'ALL' // Default tier
+    };
+    
+    // Register a one-time handler for tournament created event
+    const tournamentCreatedHandler = (data) => {
+      console.log('Tournament created response received:', data);
+      
+      // Get tournament data from the response
+      const tournamentData = data.tournament || data;
+      
+      // Emit tournament.created event for our UI to handle
+      eventBus.emit('tournament.created', {
+        tournament: tournamentData
+      });
+      
+      // Remove this one-time handler
+      this.networkManager.unregisterMessageHandler('tournamentCreated', tournamentCreatedHandler);
+    };
+    
+    // Register handler for tournament created response
+    this.networkManager.registerMessageHandler('tournamentCreated', tournamentCreatedHandler);
+    
+    // Send tournament creation request
+    const success = this.networkManager.createTournament(tournamentData);
+    
+    if (!success) {
+      console.error('Failed to send tournament creation request');
+      this._updateTournamentStatus('Error creating tournament. Please try again.');
+      
+      // Re-enable the create button
+      if (createTournamentBtn) {
+        createTournamentBtn.disabled = false;
+        createTournamentBtn.textContent = 'Create';
+      }
+    }
+  }
+  
+  /**
+   * Join an existing tournament
+   * @param {string} tournamentId - ID of the tournament to join
+   * @private
+   */
+  _joinTournament(tournamentId) {
+    console.log('Joining tournament:', tournamentId);
+    
+    // Make sure we have a network manager
+    if (!this.networkManager) {
+      console.error('Cannot join tournament: Network manager not initialized');
+      this._updateTournamentStatus('Error: Cannot connect to server. Please refresh and try again.');
+      return;
+    }
+    
+    // Make sure we have a character class selected
+    if (!this.selectedClass) {
+      console.warn('No character class selected. Highlighting character selection area...');
+      
+      // Update tournament status
+      this._updateTournamentStatus('Please select a character class first!');
+      
+      // Highlight the character selection area
+      const characterClasses = document.querySelector('.classes');
+      if (characterClasses) {
+        characterClasses.style.border = '2px solid #f1c40f';
+        characterClasses.style.boxShadow = '0 0 10px rgba(241, 196, 15, 0.7)';
+        
+        // Reset highlight after a few seconds
+        setTimeout(() => {
+          characterClasses.style.border = '';
+          characterClasses.style.boxShadow = '';
+        }, 3000);
+      }
+      
+      return;
+    }
+    
+    // Update status
+    this._updateTournamentStatus('Joining tournament...');
+    
+    // Disable all join buttons while we're joining
+    const joinButtons = document.querySelectorAll('.tournament-item button');
+    joinButtons.forEach(button => {
+      button.disabled = true;
+    });
+    
+    // Register a one-time handler for tournament joined event
+    const tournamentJoinedHandler = (data) => {
+      console.log('Tournament joined response received:', data);
+      
+      // Get tournament data from the response
+      const tournamentData = data.tournament || data;
+      
+      // Emit tournament.joined event for our UI to handle
+      eventBus.emit('tournament.joined', {
+        tournament: tournamentData
+      });
+      
+      // Remove this one-time handler
+      this.networkManager.unregisterMessageHandler('tournamentJoined', tournamentJoinedHandler);
+    };
+    
+    // Register handler for tournament joined response
+    this.networkManager.registerMessageHandler('tournamentJoined', tournamentJoinedHandler);
+    
+    // Send tournament join request
+    const success = this.networkManager.joinTournament(tournamentId);
+    
+    if (!success) {
+      console.error('Failed to send tournament join request');
+      this._updateTournamentStatus('Error joining tournament. Please try again.');
+      
+      // Re-enable join buttons
+      joinButtons.forEach(button => {
+        button.disabled = false;
+      });
+    }
+  }
+  
+  /**
+   * Start a tournament
+   * @param {string} tournamentId - ID of the tournament to start
+   * @private
+   */
+  _startTournament(tournamentId) {
+    if (!this.networkManager) {
+      console.error('Cannot start tournament: Network manager not initialized');
+      return;
+    }
+    
+    console.log('Starting tournament:', tournamentId);
+    
+    // Update status
+    this._updateTournamentStatus('Starting tournament...');
+    
+    // Send start tournament request
+    this.networkManager.startTournament(tournamentId);
+  }
+  
+  /**
+   * Update the tournament status display
+   * @param {string} message - Status message to display
+   * @private
+   */
+  _updateTournamentStatus(message) {
+    const tournamentStatus = document.getElementById('tournament-status');
+    if (tournamentStatus) {
+      // Keep the start button if it exists
+      const startBtn = tournamentStatus.querySelector('#start-tournament-btn');
+      
+      tournamentStatus.innerHTML = message;
+      
+      // Re-add the start button if it existed
+      if (startBtn) {
+        tournamentStatus.appendChild(startBtn);
+      }
+    }
+  }
+  
+  /**
+   * Add a tournament to the available tournaments list
+   * @param {Object} tournament - Tournament data
+   * @private
+   */
+  _addTournamentToList(tournament) {
+    console.log('Adding tournament to list:', tournament);
+    
+    // Get tournaments list element
+    const tournamentsList = document.getElementById('tournaments-list');
+    if (!tournamentsList) {
+      console.error('Tournaments list element not found');
+      return;
+    }
+    
+    // Check if we already have a "no tournaments" message
+    const noTournamentsMsg = tournamentsList.querySelector('.no-tournaments');
+    if (noTournamentsMsg) {
+      // Remove the message
+      noTournamentsMsg.remove();
+    }
+    
+    // Check if this tournament is already in the list
+    const existingTournament = tournamentsList.querySelector(`[data-tournament-id="${tournament.id}"]`);
+    if (existingTournament) {
+      // Update existing tournament
+      const playerCountEl = existingTournament.querySelector('.tournament-players');
+      if (playerCountEl) {
+        playerCountEl.textContent = `Players: ${tournament.playerCount}/${tournament.maxPlayers || 16}`;
+      }
+      return;
+    }
+    
+    // Create tournament item
+    const tournamentItem = document.createElement('div');
+    tournamentItem.className = 'tournament-item';
+    tournamentItem.dataset.tournamentId = tournament.id;
+    
+    // Create tournament info
+    const tournamentInfo = document.createElement('div');
+    tournamentInfo.className = 'tournament-info';
+    
+    // Create tournament name
+    const tournamentName = document.createElement('div');
+    tournamentName.className = 'tournament-name';
+    tournamentName.textContent = tournament.name;
+    
+    // Create tournament players count
+    const tournamentPlayers = document.createElement('div');
+    tournamentPlayers.className = 'tournament-players';
+    tournamentPlayers.textContent = `Players: ${tournament.playerCount}/${tournament.maxPlayers || 16}`;
+    
+    // Add name and players to info
+    tournamentInfo.appendChild(tournamentName);
+    tournamentInfo.appendChild(tournamentPlayers);
+    
+    // Create join button
+    const joinButton = document.createElement('button');
+    joinButton.textContent = 'Join';
+    joinButton.addEventListener('click', () => {
+      this._joinTournament(tournament.id);
+    });
+    
+    // Disable join button if tournament is full or not in WAITING status
+    if (tournament.status !== 'WAITING' || tournament.playerCount >= (tournament.maxPlayers || 16)) {
+      joinButton.disabled = true;
+      joinButton.title = tournament.status !== 'WAITING' 
+        ? 'Tournament already started' 
+        : 'Tournament is full';
+    }
+    
+    // Add info and button to item
+    tournamentItem.appendChild(tournamentInfo);
+    tournamentItem.appendChild(joinButton);
+    
+    // Add item to list
+    tournamentsList.appendChild(tournamentItem);
+  }
+  
+  /**
+   * Update the player count for a tournament in the list
+   * @param {string} tournamentId - ID of the tournament
+   * @param {number} playerCount - New player count
+   * @private
+   */
+  _updateTournamentPlayerCount(tournamentId, playerCount) {
+    const tournamentsList = document.getElementById('tournaments-list');
+    if (!tournamentsList) return;
+    
+    const tournamentItem = tournamentsList.querySelector(`[data-tournament-id="${tournamentId}"]`);
+    if (!tournamentItem) return;
+    
+    const playersElement = tournamentItem.querySelector('.tournament-players');
+    if (playersElement) {
+      playersElement.textContent = `Players: ${playerCount}`;
+    }
+  }
+  
+  /**
+   * Clear the tournaments list
+   * @private
+   */
+  _clearTournamentsList() {
+    const tournamentsList = document.getElementById('tournaments-list');
+    if (!tournamentsList) return;
+    
+    tournamentsList.innerHTML = '<div class="no-tournaments">No tournaments available</div>';
+  }
+
+  /**
+   * Set up event handlers for tournament events
+   * @private
+   */
+  _setupTournamentEventHandlers() {
+    console.log('Setting up tournament event handlers');
+    
+    // Tournament created handler
+    eventBus.on('tournament.created', (data) => {
+      console.log('Tournament created event received:', data);
+      
+      // Check if data has tournament property (new format) or direct properties (old format)
+      const tournamentData = data.tournament || data;
+      
+      this._updateTournamentStatus(`Tournament "${tournamentData.name}" created! Waiting for players to join...`);
+      this.currentTournamentId = tournamentData.id;
+      
+      // Show the character selection classes to make sure the player selects one
+      const characterClasses = document.querySelector('.classes');
+      if (characterClasses) {
+        characterClasses.style.display = 'flex';
+      }
+      
+      // Make the start button visible if it's not already
+      const startBtn = document.getElementById('start-game');
+      if (startBtn) {
+        startBtn.classList.add('visible');
+      }
+      
+      // Disable the create tournament button
+      const createTournamentBtn = document.getElementById('create-tournament-btn');
+      if (createTournamentBtn) {
+        createTournamentBtn.disabled = true;
+        createTournamentBtn.textContent = 'Tournament Created';
+      }
+    });
+    
+    // Tournament joined handler
+    eventBus.on('tournament.joined', (data) => {
+      console.log('Tournament joined event received:', data);
+      
+      // Check if data has tournament property (new format) or direct properties (old format)
+      const tournamentData = data.tournament || data;
+      
+      this._updateTournamentStatus(`Joined tournament "${tournamentData.name}" with ${tournamentData.playerCount} players`);
+      this.currentTournamentId = tournamentData.id;
+      
+      // Make the start button visible
+      const startBtn = document.getElementById('start-game');
+      if (startBtn) {
+        startBtn.classList.add('visible');
+      }
+    });
+    
+    // Tournament player count update handler
+    eventBus.on('tournament.playerCount', (data) => {
+      console.log('Tournament player count update received:', data);
+      
+      // Check if data has tournament property (new format) or direct properties (old format)
+      const tournamentData = data.tournament || data;
+      
+      this._updateTournamentPlayerCount(tournamentData.id, tournamentData.playerCount);
+      
+      if (this.currentTournamentId === tournamentData.id) {
+        this._updateTournamentStatus(`Tournament "${tournamentData.name}" - ${tournamentData.playerCount} players joined`);
+      }
+    });
+    
+    // New tournament handler
+    eventBus.on('tournament.new', (data) => {
+      console.log('New tournament available:', data);
+      
+      // Check if data has tournament property (new format) or direct properties (old format)
+      const tournamentData = data.tournament || data;
+      
+      this._addTournamentToList(tournamentData);
+    });
+    
+    // Tournament list handler
+    eventBus.on('tournament.list', (data) => {
+      console.log('Active tournaments list received:', data);
+      
+      // Clear existing tournaments
+      this._clearTournamentsList();
+      
+      // Add each tournament to the list
+      if (data.tournaments && Array.isArray(data.tournaments)) {
+        data.tournaments.forEach(tournament => {
+          this._addTournamentToList(tournament);
+        });
+      }
+    });
   }
 }
 

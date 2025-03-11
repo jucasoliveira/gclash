@@ -1,5 +1,6 @@
 import eventBus from '../core/EventBus.js';
 import HUD from './HUD.js';
+import tournamentBracket from './TournamentBracket.js';
 
 /**
  * UIManager - Manages all UI elements and screens
@@ -9,7 +10,8 @@ class UIManager {
   constructor() {
     this.isInitialized = false;
     this.components = {
-      hud: null
+      hud: null,
+      tournamentBracket: tournamentBracket
     };
   }
 
@@ -24,6 +26,8 @@ class UIManager {
 
     // Initialize HUD component
     this.components.hud = new HUD().init();
+
+    // TournamentBracket is already initialized in its module
 
     // Set up event listeners
     this._setupEventListeners();
@@ -70,6 +74,17 @@ class UIManager {
         this.components.hud.hide();
       }
     });
+    
+    // Listen for WebSocket tournament messages and relay to eventBus
+    eventBus.on('websocket.message', (data) => {
+      if (data.type === 'tournamentStarted') {
+        eventBus.emit('tournamentStarted', data);
+      } else if (data.type === 'tournamentBracketUpdate') {
+        eventBus.emit('tournamentBracketUpdate', data);
+      } else if (data.type === 'tournamentComplete') {
+        eventBus.emit('tournamentComplete', data);
+      }
+    });
   }
 
   /**
@@ -100,6 +115,33 @@ class UIManager {
       this.components.hud.hide();
     }
   }
+  
+  /**
+   * Show the tournament bracket
+   */
+  showTournamentBracket() {
+    if (this.components.tournamentBracket) {
+      this.components.tournamentBracket.show();
+    }
+  }
+  
+  /**
+   * Hide the tournament bracket
+   */
+  hideTournamentBracket() {
+    if (this.components.tournamentBracket) {
+      this.components.tournamentBracket.hide();
+    }
+  }
+  
+  /**
+   * Toggle the tournament bracket visibility
+   */
+  toggleTournamentBracket() {
+    if (this.components.tournamentBracket) {
+      this.components.tournamentBracket.toggle();
+    }
+  }
 
   /**
    * Clean up resources
@@ -111,10 +153,15 @@ class UIManager {
     eventBus.off('player.cooldownUpdate');
     eventBus.off('game.started');
     eventBus.off('game.stopped');
+    eventBus.off('websocket.message');
 
     // Dispose components
     if (this.components.hud) {
       this.components.hud.dispose();
+    }
+    
+    if (this.components.tournamentBracket) {
+      this.components.tournamentBracket.dispose();
     }
 
     this.isInitialized = false;

@@ -1128,54 +1128,56 @@ Implemented a comprehensive user authentication system with the following featur
   - Updated WebSocket handlers to save player data to the database
   - Implemented player stats tracking for kills, deaths, and damage
   - Added score updates based on game performance
-  - Created tournament and battle royale result recording
-  - Implemented proper error handling for database operations during gameplay
-  - Added helper functions for broadcasting messages to clients
-  - Enhanced player tracking with database IDs
+  - Connected tournament results to player profiles
+  - Implemented leaderboard updates based on tournament performance
 
-- **Player Progression System**:
+### Step 21: Tournament System Enhancement
 
-  - Implemented tiered ranking system (Bronze, Silver, Gold, Platinum, Diamond)
-  - Created score-based progression with automatic tier updates
-  - Added stats tracking for wins, losses, kills, deaths, and damage
-  - Implemented methods for updating player scores and stats
-  - Created virtual properties for calculated stats like win rate and KD ratio
-  - Added timestamp tracking for player activity
+- **Tournament Creation and Management**:
 
-- **Tournament System Database Support**:
+  - Implemented robust tournament creation with proper error handling
+  - Added tournament joining functionality with player validation
+  - Created tournament status tracking (WAITING, STARTING, IN_PROGRESS, COMPLETED)
+  - Implemented tournament player count updates in real-time
+  - Added tournament listing for available tournaments
+  - Created tournament UI with creation and joining options
+  - Implemented tournament status display with real-time updates
 
-  - Created schema for tournament tracking with brackets and matches
-  - Implemented methods for generating tournament brackets
-  - Added participant tracking with seeding
-  - Created match result recording and bracket advancement
-  - Implemented tournament winner determination and stats updates
-  - Added methods for retrieving tournament data and results
+- **WebSocket Protocol Improvements**:
 
-- **Battle Royale Database Support**:
+  - Standardized message format for tournament-related communications
+  - Implemented proper message handlers for tournament events
+  - Added tournament data validation on both client and server
+  - Created consistent error handling for tournament operations
+  - Improved connection state management for tournament actions
+  - Added tournament ID tracking in player data
+  - Implemented tournament-specific event bus events
 
-  - Created schema for battle royale matches with participant tracking
-  - Implemented methods for recording player eliminations and placements
-  - Added damage tracking and kill attribution
-  - Created safe zone stage configuration and tracking
-  - Implemented winner determination and stats updates
-  - Added methods for retrieving active battle royale matches
+- **Client-Server Synchronization**:
 
-- **Testing and Validation**:
+  - Ensured character class selection is validated before tournament actions
+  - Added proper tournament state synchronization between client and server
+  - Implemented tournament player list updates in real-time
+  - Created tournament-specific game mode with appropriate map loading
+  - Added tournament context preservation during game transitions
+  - Implemented proper cleanup of tournament resources
+  - Created visual feedback for tournament actions
 
-  - Created database test script to verify model functionality
-  - Implemented API test script to verify endpoint functionality
-  - Added comprehensive logging for debugging
-  - Created test player data for development
-  - Implemented proper error handling and validation
-  - Added fallback mechanisms for database connection issues
+- **Architecture Improvements**:
 
-- **Technical Implementation Details**:
+  - Refactored WebSocketManager to use message handler registration pattern
+  - Separated tournament event handling from UI event handling
+  - Improved error reporting for tournament operations
+  - Added tournament data caching for better performance
+  - Implemented proper tournament state management
+  - Created clear separation between tournament creation and joining logic
+  - Added comprehensive logging for tournament operations
 
-  - Used Mongoose for MongoDB object modeling
-  - Implemented proper schema validation with appropriate field types
-  - Created indexes for frequently queried fields
-  - Added virtual properties for calculated fields
-  - Implemented methods for common operations
-  - Created static methods for model-wide operations
-  - Used proper error handling and validation
-  - Added comprehensive logging for debugging
+- **Technical Insights**:
+
+  - Discovered the importance of consistent message formats between client and server
+  - Learned about the challenges of maintaining state across WebSocket connections
+  - Identified the need for proper validation before tournament actions
+  - Recognized the value of separating UI events from network events
+  - Understood the importance of proper error handling in multiplayer systems
+  - Appreciated the benefits of the message handler registration pattern

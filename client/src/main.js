@@ -7,6 +7,8 @@ import game from './components/core/Game.js';
 import tournamentMap from './components/world/TournamentMap.js';
 import grid from './components/world/Grid.js';
 import battleRoyaleMap from './components/world/BattleRoyaleMap.js';
+import tournamentBracket from './components/ui/TournamentBracket.js';
+import uiManager from './components/ui/UIManager.js';
 
 // Initialize game when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
@@ -336,4 +338,56 @@ window.showDeathScreen = (attackerId) => {
       }, 500);
     }
   }, 1000);
+};
+
+// Function to toggle tournament bracket visibility
+window.toggleTournamentBracket = () => {
+  console.log('Toggling tournament bracket visibility...');
+  if (tournamentBracket) {
+    tournamentBracket.toggle();
+  } else {
+    console.error('Tournament bracket component not available');
+  }
+};
+
+// Function to create a test tournament
+window.createTestTournament = (name = 'Test Tournament') => {
+  console.log('Creating test tournament...');
+  if (window.game && window.game.networkManager) {
+    window.game.networkManager.createTournament({
+      name: name
+    });
+  } else {
+    console.error('Game or NetworkManager not initialized');
+  }
+};
+
+// Function to join a test tournament
+window.joinTestTournament = (tournamentId) => {
+  console.log('Joining test tournament...');
+  if (!tournamentId) {
+    console.error('Tournament ID is required');
+    return;
+  }
+  
+  if (window.game && window.game.networkManager) {
+    window.game.networkManager.joinTournament(tournamentId);
+  } else {
+    console.error('Game or NetworkManager not initialized');
+  }
+};
+
+// Function to start a test tournament
+window.startTestTournament = (tournamentId) => {
+  console.log('Starting test tournament...');
+  if (!tournamentId) {
+    console.error('Tournament ID is required');
+    return;
+  }
+  
+  if (window.game && window.game.networkManager) {
+    window.game.networkManager.startTournament(tournamentId);
+  } else {
+    console.error('Game or NetworkManager not initialized');
+  }
 };

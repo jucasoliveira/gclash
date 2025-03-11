@@ -4,6 +4,9 @@ import eventBus from '../core/EventBus.js';
  * WebSocketManager - Simple WebSocket implementation for multiplayer communication
  */
 class WebSocketManager {
+  /**
+   * Create a new WebSocketManager
+   */
   constructor() {
     // Connection state
     this.socket = null;
@@ -11,10 +14,27 @@ class WebSocketManager {
     this.connected = false;
     this.playerData = null;
     this.otherPlayers = {};
+    this._hasJoined = false;
+    this._connectionStatus = 'disconnected';
+    this.messageHandlers = {};
+    this.statusCallback = null;
+    
+    // Tournament-related properties
+    this._currentTournament = null;
+    this._availableTournaments = [];
+    this._tournamentCallbacks = {
+      onTournamentCreated: null,
+      onTournamentJoined: null,
+      onTournamentUpdated: null,
+      onNewTournament: null,
+      onActiveTournaments: null
+    };
     
     // Bind methods
     this.connect = this.connect.bind(this);
     this.handleMessage = this.handleMessage.bind(this);
+    this.sendMessage = this.sendMessage.bind(this);
+    this.disconnect = this.disconnect.bind(this);
   }
   
   /**
@@ -38,53 +58,59 @@ class WebSocketManager {
   connect(serverUrl = 'ws://localhost:3000') {
     return new Promise((resolve, reject) => {
       try {
-        console.log(`Connecting to server at ${serverUrl}`);
+        console.log(`Attempting to connect to WebSocket server at ${serverUrl}`);
+        
+        // Check if already connected
+        if (this.socket && this.connected) {
+          console.log('Already connected to WebSocket server');
+          eventBus.emit('network.connected');
+          resolve();
+          return;
+        }
         
         // Create WebSocket connection
         this.socket = new WebSocket(serverUrl);
         
         // Set up event handlers with proper binding
         this.socket.onopen = () => {
-          console.log('Connected to server');
+          console.log('WebSocket connection established successfully');
           this.connected = true;
+          
+          // Emit connection event for other components
+          eventBus.emit('network.connected');
+          
+          // Send a ping to verify connection is working
+          this.sendMessage({ type: 'ping', timestamp: Date.now() });
+          
           resolve();
         };
         
-        this.socket.onclose = () => {
-          console.log('Disconnected from server');
-          this.connected = false;
-          
-          // If we were previously connected, emit a disconnected event
-          if (this.connected) {
-            eventBus.emit('network.disconnected');
-          }
-        };
+        // Make sure handleMessage is bound to this instance
+        this.socket.onmessage = this.handleMessage;
         
         this.socket.onerror = (error) => {
-          console.error('Server error:', error);
+          console.error('WebSocket connection error:', error);
           this.connected = false;
           reject(error);
         };
         
-        // Make sure to bind the message handler to this instance
-        this.socket.onmessage = this.handleMessage.bind(this);
-        
-        // Set a connection timeout
-        const timeout = setTimeout(() => {
-          if (!this.connected) {
-            console.error('Connection timeout');
-            this.socket.close();
-            reject(new Error('Connection timeout'));
-          }
-        }, 5000);
-        
-        // Clear timeout when connected
-        this.socket.addEventListener('open', () => {
-          clearTimeout(timeout);
-        });
+        this.socket.onclose = (event) => {
+          console.log(`WebSocket connection closed. Code: ${event.code}, Reason: ${event.reason || 'None provided'}`);
+          this.connected = false;
+          
+          // Emit disconnection event for other components
+          eventBus.emit('network.disconnected');
+          
+          // Try to reconnect after a delay
+          setTimeout(() => {
+            console.log('Attempting to reconnect to WebSocket server...');
+            this.connect(serverUrl)
+              .then(() => console.log('Reconnected to WebSocket server successfully'))
+              .catch(err => console.error('Failed to reconnect to WebSocket server:', err));
+          }, 5000);
+        };
       } catch (error) {
-        console.error('Error connecting to server:', error);
-        this.connected = false;
+        console.error('Error creating WebSocket connection:', error);
         reject(error);
       }
     });
@@ -97,8 +123,12 @@ class WebSocketManager {
   handleMessage(event) {
     try {
       const message = JSON.parse(event.data);
-      console.log('Received message:', message.type);
+      console.log('Received WebSocket message:', message.type, message);
       
+      // Emit the raw message for other components to use
+      eventBus.emit('websocket.message', message);
+      
+      // Process message based on type
       switch (message.type) {
         case 'id':
           this.playerId = message.id;
@@ -110,6 +140,49 @@ class WebSocketManager {
           // If we have player data, send it now
           if (this.playerData) {
             this.joinGame(this.playerData);
+          }
+          break;
+          
+        case 'joined':
+          console.log('Joined game with ID:', message.id);
+          
+          // Store player data
+          this.playerId = message.id;
+          this._hasJoined = true;
+          this._connectionStatus = 'joined';
+          
+          // Store player properties
+          if (message.username) this._username = message.username;
+          if (message.characterClass) this._characterClass = message.characterClass;
+          if (message.stats) this._stats = message.stats;
+          
+          // If we have a tournament ID, store it
+          if (message.currentTournament) {
+            console.log('Player is in tournament:', message.currentTournament);
+            this._currentTournament = {
+              id: message.currentTournament
+            };
+          }
+          
+          // Emit joined event
+          eventBus.emit('network.joined', {
+            id: this.playerId,
+            username: this._username,
+            characterClass: this._characterClass,
+            stats: this._stats,
+            currentTournament: message.currentTournament
+          });
+          
+          // Update UI if we have a status callback
+          if (this.statusCallback) {
+            this.statusCallback({
+              status: 'joined',
+              playerId: this.playerId,
+              username: this._username,
+              characterClass: this._characterClass,
+              stats: this._stats,
+              currentTournament: message.currentTournament
+            });
           }
           break;
           
@@ -361,9 +434,184 @@ class WebSocketManager {
             maxHealth: message.maxHealth
           });
           break;
+          
+        // Tournament-related messages
+        case 'tournamentCreated':
+          console.log('Tournament created:', message.tournament);
+          
+          // Store current tournament
+          this._currentTournament = message.tournament;
+          
+          // Emit tournament created event
+          eventBus.emit('tournament.created', message);
+          break;
+          
+        case 'tournamentAvailable':
+          console.log('Tournament available:', message.tournamentId);
+          eventBus.emit('tournament.available', {
+            tournamentId: message.tournamentId,
+            name: message.name,
+            playerCount: message.playerCount,
+            status: message.status
+          });
+          this._showNotification(`Tournament "${message.name}" is available to join!`);
+          break;
+          
+        case 'tournamentJoined':
+          console.log('Joined tournament:', message.tournament);
+          
+          // Store current tournament
+          this._currentTournament = message.tournament;
+          
+          // Emit tournament joined event
+          eventBus.emit('tournament.joined', message);
+          break;
+          
+        case 'tournamentPlayerCount':
+          console.log('Tournament player count updated:', message.playerCount);
+          eventBus.emit('tournament.playerCountUpdated', {
+            tournamentId: message.tournamentId,
+            playerCount: message.playerCount
+          });
+          break;
+          
+        case 'tournamentReady':
+          console.log('Tournament ready to start:', message.tournamentId);
+          eventBus.emit('tournament.ready', {
+            tournamentId: message.tournamentId
+          });
+          this._showNotification('Tournament is ready to start!');
+          break;
+          
+        case 'tournamentStarted':
+          console.log('Tournament started:', message.tournamentId);
+          eventBus.emit('tournamentStarted', {
+            tournamentId: message.tournamentId,
+            name: message.name,
+            brackets: message.brackets
+          });
+          this._showNotification(`Tournament "${message.name}" has started!`);
+          break;
+          
+        case 'tournamentBracketUpdate':
+          console.log('Tournament bracket updated:', message.tournamentId);
+          eventBus.emit('tournamentBracketUpdate', {
+            tournamentId: message.tournamentId,
+            brackets: message.brackets
+          });
+          break;
+          
+        case 'tournamentMatchReady':
+          console.log('Tournament match ready:', message.matchId);
+          eventBus.emit('tournament.matchReady', {
+            tournamentId: message.tournamentId,
+            matchId: message.matchId,
+            opponent: message.opponent
+          });
+          this._showNotification(`Your tournament match is ready! Opponent: ${message.opponent.name}`);
+          break;
+          
+        case 'tournamentComplete':
+          console.log('Tournament completed:', message.tournamentId);
+          eventBus.emit('tournamentComplete', {
+            tournamentId: message.tournamentId,
+            winner: message.winner
+          });
+          this._showNotification(`Tournament completed! Winner: ${message.winner.name}`);
+          break;
+          
+        case 'tournamentBracket':
+          console.log('Tournament bracket received:', message.tournamentId);
+          eventBus.emit('tournament.bracketReceived', {
+            tournamentId: message.tournamentId,
+            name: message.name,
+            status: message.status,
+            brackets: message.brackets,
+            winner: message.winner
+          });
+          break;
+          
+        case 'newTournament':
+          console.log('New tournament available:', message.tournament);
+          
+          // Add to available tournaments
+          if (!this._availableTournaments) {
+            this._availableTournaments = [];
+          }
+          
+          // Check if tournament already exists in the list
+          const existingIndex = this._availableTournaments.findIndex(t => t.id === message.tournament.id);
+          if (existingIndex >= 0) {
+            // Update existing tournament
+            this._availableTournaments[existingIndex] = message.tournament;
+          } else {
+            // Add new tournament
+            this._availableTournaments.push(message.tournament);
+          }
+          
+          // Emit new tournament event
+          eventBus.emit('tournament.new', message);
+          break;
+          
+        case 'tournamentUpdated':
+          console.log('Tournament updated:', message.tournament);
+          
+          // Update tournament in available tournaments list
+          if (this._availableTournaments) {
+            const index = this._availableTournaments.findIndex(t => t.id === message.tournament.id);
+            if (index >= 0) {
+              this._availableTournaments[index] = {
+                ...this._availableTournaments[index],
+                ...message.tournament
+              };
+            }
+          }
+          
+          // Update current tournament if it's the same one
+          if (this._currentTournament && this._currentTournament.id === message.tournament.id) {
+            this._currentTournament = {
+              ...this._currentTournament,
+              ...message.tournament
+            };
+          }
+          
+          // Emit tournament updated event
+          eventBus.emit('tournament.playerCount', message);
+          break;
+          
+        case 'activeTournaments':
+          console.log('Received active tournaments list:', message.tournaments);
+          
+          // Store available tournaments
+          this._availableTournaments = message.tournaments;
+          
+          // Emit tournaments list event
+          eventBus.emit('tournament.list', message);
+          break;
+          
+        case 'error':
+          console.error('Server error:', message.message);
+          
+          // Show error notification
+          this._showNotification(`Error: ${message.message}`);
+          
+          // Emit error event
+          eventBus.emit('network.error', message);
+          break;
+      }
+      
+      // Call any registered message handlers for this message type
+      if (this.messageHandlers && this.messageHandlers[message.type]) {
+        this.messageHandlers[message.type].forEach(handler => {
+          try {
+            handler(message);
+          } catch (handlerError) {
+            console.error(`Error in message handler for ${message.type}:`, handlerError);
+          }
+        });
       }
     } catch (error) {
-      console.error('Error handling message:', error);
+      console.error('Error processing WebSocket message:', error);
     }
   }
   
@@ -372,16 +620,25 @@ class WebSocketManager {
    * @param {Object} message - The message to send
    */
   sendMessage(message) {
-    if (this.socket && this.connected) {
-      this.socket.send(JSON.stringify(message));
-    } else {
-      console.warn('Cannot send message: not connected');
+    if (!this.socket || !this.connected) {
+      console.error('Cannot send message: Not connected to server');
+      return false;
+    }
+    
+    try {
+      const messageStr = JSON.stringify(message);
+      console.log('Sending message to server:', message.type, message);
+      this.socket.send(messageStr);
+      return true;
+    } catch (error) {
+      console.error('Error sending message:', error);
+      return false;
     }
   }
   
   /**
    * Join the game with player data
-   * @param {Object} playerData - The player data
+   * @param {Object} playerData - Player data
    */
   joinGame(playerData) {
     console.log('Joining game with player data:', playerData);
@@ -407,6 +664,11 @@ class WebSocketManager {
         username: authData.username
       } : null
     };
+    
+    // Make sure characterClass is set (for backward compatibility)
+    if (!this.playerData.characterClass && this.playerData.class) {
+      this.playerData.characterClass = this.playerData.class;
+    }
     
     // Send join message
     this.sendMessage({
@@ -621,6 +883,248 @@ class WebSocketManager {
     }
     
     return status;
+  }
+  
+  /**
+   * Create a new tournament
+   * @param {Object} tournamentData - Tournament data
+   * @param {string} tournamentData.name - Tournament name
+   * @param {string} tournamentData.tier - Tournament tier (optional)
+   * @returns {boolean} - Success status
+   */
+  createTournament(tournamentData) {
+    if (!this.connected || !this.socket) {
+      console.error('Cannot create tournament: Not connected to server');
+      return false;
+    }
+    
+    console.log('Creating tournament:', tournamentData.name);
+    
+    // Make sure player has joined the game
+    if (!this.playerId) {
+      console.warn('Player ID not set, joining game first');
+      // If we have player data, use it, otherwise use a default
+      const playerData = this.playerData || {
+        username: `Player_${Date.now().toString().slice(-6)}`,
+        characterClass: 'clerk' // Default class if none selected
+      };
+      
+      // Join the game first
+      this.sendMessage({
+        type: 'join',
+        playerData: playerData
+      });
+      
+      // Store player data for later use
+      this.playerData = playerData;
+    }
+    
+    // Create tournament message
+    const message = {
+      type: 'createTournament',
+      name: tournamentData.name,
+      tier: tournamentData.tier || 'ALL'
+    };
+    
+    // Send message and return result
+    const success = this.sendMessage(message);
+    
+    if (success) {
+      console.log('Tournament creation message sent successfully');
+    } else {
+      console.error('Failed to send tournament creation message');
+    }
+    
+    return success;
+  }
+  
+  /**
+   * Join an existing tournament
+   * @param {string} tournamentId - Tournament ID
+   * @returns {boolean} - Success status
+   */
+  joinTournament(tournamentId) {
+    if (!this.connected || !this.socket) {
+      console.error('Cannot join tournament: Not connected to server');
+      return false;
+    }
+    
+    console.log('Joining tournament:', tournamentId);
+    
+    // Make sure player has joined the game
+    if (!this.playerId) {
+      console.warn('Player ID not set, joining game first');
+      // If we have player data, use it, otherwise use a default
+      const playerData = this.playerData || {
+        username: `Player_${Date.now().toString().slice(-6)}`,
+        characterClass: 'clerk' // Default class if none selected
+      };
+      
+      // Join the game first
+      this.sendMessage({
+        type: 'join',
+        playerData: playerData
+      });
+      
+      // Store player data for later use
+      this.playerData = playerData;
+    }
+    
+    // Send join tournament message
+    const success = this.sendMessage({
+      type: 'joinTournament',
+      tournamentId
+    });
+    
+    if (success) {
+      console.log('Tournament join message sent successfully');
+    } else {
+      console.error('Failed to send tournament join message');
+    }
+    
+    return success;
+  }
+  
+  /**
+   * Start a tournament (creator only)
+   * @param {string} tournamentId - Tournament ID
+   */
+  startTournament(tournamentId) {
+    if (!this.connected || !this.socket) {
+      console.error('Cannot start tournament: Not connected to server');
+      return;
+    }
+    
+    console.log('Starting tournament:', tournamentId);
+    
+    this.sendMessage({
+      type: 'tournamentStart',
+      tournamentId
+    });
+  }
+  
+  /**
+   * Report a tournament match result
+   * @param {Object} resultData - Match result data
+   * @param {string} resultData.tournamentId - Tournament ID
+   * @param {string} resultData.matchId - Match ID
+   * @param {string} resultData.winnerId - Winner ID
+   */
+  reportTournamentMatchResult(resultData) {
+    if (!this.connected || !this.socket) {
+      console.error('Cannot report match result: Not connected to server');
+      return;
+    }
+    
+    console.log('Reporting match result:', resultData.matchId);
+    
+    this.sendMessage({
+      type: 'tournamentMatchComplete',
+      tournamentId: resultData.tournamentId,
+      matchId: resultData.matchId,
+      winnerId: resultData.winnerId
+    });
+  }
+  
+  /**
+   * Request tournament bracket data
+   * @param {string} tournamentId - Tournament ID
+   */
+  requestTournamentBracket(tournamentId) {
+    if (!this.connected || !this.socket) {
+      console.error('Cannot request tournament bracket: Not connected to server');
+      return;
+    }
+    
+    console.log('Requesting tournament bracket:', tournamentId);
+    
+    this.sendMessage({
+      type: 'tournamentBracketRequest',
+      tournamentId
+    });
+  }
+  
+  /**
+   * Register tournament callbacks
+   * @param {Object} callbacks - Tournament callbacks
+   * @param {Function} callbacks.onTournamentCreated - Called when a tournament is created
+   * @param {Function} callbacks.onTournamentJoined - Called when a player joins a tournament
+   * @param {Function} callbacks.onTournamentUpdated - Called when a tournament is updated
+   * @param {Function} callbacks.onNewTournament - Called when a new tournament is created
+   * @param {Function} callbacks.onActiveTournaments - Called when active tournaments list is received
+   */
+  registerTournamentCallbacks(callbacks) {
+    console.log('Registering tournament callbacks');
+    
+    if (callbacks) {
+      this._tournamentCallbacks = {
+        ...this._tournamentCallbacks,
+        ...callbacks
+      };
+    }
+    
+    console.log('Tournament callbacks registered:', Object.keys(this._tournamentCallbacks).filter(key => !!this._tournamentCallbacks[key]));
+  }
+  
+  /**
+   * Get current tournament data
+   * @returns {Object|null} - Current tournament data
+   */
+  getCurrentTournament() {
+    return this._currentTournament;
+  }
+  
+  /**
+   * Get available tournaments
+   * @returns {Array} - Available tournaments
+   */
+  getAvailableTournaments() {
+    return this._availableTournaments || [];
+  }
+  
+  /**
+   * Register a message handler for a specific message type
+   * @param {string} messageType - The message type to handle
+   * @param {Function} handler - The handler function
+   */
+  registerMessageHandler(messageType, handler) {
+    console.log(`Registering handler for message type: ${messageType}`);
+    
+    if (!this.messageHandlers) {
+      this.messageHandlers = {};
+    }
+    
+    if (!this.messageHandlers[messageType]) {
+      this.messageHandlers[messageType] = [];
+    }
+    
+    this.messageHandlers[messageType].push(handler);
+  }
+  
+  /**
+   * Unregister a message handler for a specific message type
+   * @param {string} messageType - The message type
+   * @param {Function} handler - The handler function to remove
+   */
+  unregisterMessageHandler(messageType, handler) {
+    console.log(`Unregistering handler for message type: ${messageType}`);
+    
+    if (!this.messageHandlers || !this.messageHandlers[messageType]) {
+      return;
+    }
+    
+    const index = this.messageHandlers[messageType].indexOf(handler);
+    if (index !== -1) {
+      this.messageHandlers[messageType].splice(index, 1);
+    }
+  }
+  
+  /**
+   * Set a status callback function
+   * @param {Function} callback - The callback function
+   */
+  setStatusCallback(callback) {
+    this.statusCallback = callback;
   }
 }
 
