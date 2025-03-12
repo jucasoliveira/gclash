@@ -27,7 +27,12 @@ class InputManager {
       'camera.down': ['ArrowDown'],
       'camera.left': ['ArrowLeft'],
       'camera.right': ['ArrowRight'],
-      'camera.toggleFollow': ['f', 'F']
+      'camera.toggleFollow': ['f', 'F'],
+      'action.evade': [' '], // Space bar for evade
+      'skill.slot1': ['1'], // Number keys for skill slots
+      'skill.slot2': ['2'],
+      'skill.slot3': ['3'],
+      'skill.slot4': ['4']
     };
     
     // Camera state
@@ -40,6 +45,7 @@ class InputManager {
     this.handleMouseDown = this.handleMouseDown.bind(this);
     this.handleMouseUp = this.handleMouseUp.bind(this);
     this.handleClick = this.handleClick.bind(this);
+    this.handleRightClick = this.handleRightClick.bind(this);
     this.toggleCameraFollowMode = this.toggleCameraFollowMode.bind(this);
     
     // Initialization flag
@@ -60,6 +66,13 @@ class InputManager {
     window.addEventListener('mousedown', this.handleMouseDown);
     window.addEventListener('mouseup', this.handleMouseUp);
     document.addEventListener('click', this.handleClick);
+    
+    // Add right-click handler with preventDefault to avoid context menu
+    document.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      this.handleRightClick(e);
+      return false;
+    });
     
     // Listen for camera follow mode changes
     eventBus.on('camera.followModeChanged', (data) => {
@@ -155,7 +168,7 @@ class InputManager {
   }
 
   /**
-   * Handle click events
+   * Handle left click events
    * @param {MouseEvent} event - Mouse event
    */
   handleClick(event) {
@@ -177,10 +190,37 @@ class InputManager {
     const ndcX = (event.clientX / window.innerWidth) * 2 - 1;
     const ndcY = -(event.clientY / window.innerHeight) * 2 + 1;
     
+    // Emit both move/interact and attack events - the handler will determine which to use
+    // based on whether there's a target under the cursor
     eventBus.emit('input.click', {
       position: { x: event.clientX, y: event.clientY },
       ndc: { x: ndcX, y: ndcY },
-      button: this.getButtonName(event.button),
+      button: 'left',
+      event
+    });
+    
+    // Also emit a move event for left click
+    eventBus.emit('input.move', {
+      position: { x: event.clientX, y: event.clientY },
+      ndc: { x: ndcX, y: ndcY },
+      event
+    });
+  }
+  
+  /**
+   * Handle right click events
+   * @param {MouseEvent} event - Mouse event
+   */
+  handleRightClick(event) {
+    // Calculate normalized device coordinates
+    const ndcX = (event.clientX / window.innerWidth) * 2 - 1;
+    const ndcY = -(event.clientY / window.innerHeight) * 2 + 1;
+    
+    // Emit core skill event
+    eventBus.emit('input.coreSkill', {
+      position: { x: event.clientX, y: event.clientY },
+      ndc: { x: ndcX, y: ndcY },
+      button: 'right',
       event
     });
   }
@@ -297,6 +337,7 @@ class InputManager {
     window.removeEventListener('mousedown', this.handleMouseDown);
     window.removeEventListener('mouseup', this.handleMouseUp);
     document.removeEventListener('click', this.handleClick);
+    document.removeEventListener('contextmenu', this.handleRightClick);
     
     this.isInitialized = false;
   }

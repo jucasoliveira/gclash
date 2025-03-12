@@ -1633,3 +1633,58 @@ Implemented a comprehensive user authentication system with the following featur
   - Elimination of visual glitches during combat
   - Consistent health display across all game states
   - Improved multiplayer synchronization
+
+### Step 25: Diablo-Style Movement System
+
+Implemented a mouse-driven movement system inspired by Diablo games with the following features:
+
+- **Mouse-Driven Movement**:
+
+  - Clicking anywhere on the ground moves the player to that position
+  - Character automatically pathfinds to the clicked location
+  - Character rotation smoothly turns to face movement direction
+  - Movement automatically stops when destination is reached
+  - WASD controls remain available as a secondary movement option
+
+- **Click-to-Attack Integration**:
+
+  - Clicking on enemies attempts to attack if in range
+  - If enemy is out of range, character automatically moves within attack range
+  - Auto-attacks when moving into range of targeted enemy
+  - Target selection and movement use the same input system
+
+- **Visual Feedback**:
+
+  - Dark red circular indicator shows where player clicked
+  - Indicator gradually fades out with subtle scaling animation
+  - Position above ground to avoid z-fighting (visual glitches)
+
+- **Movement Speed Enhancements**:
+
+  - Dramatically increased movement speed for better responsiveness
+  - Base speed multiplier increased from 0.5 to 2.0
+  - Movement multiplier increased from 10.0 to 30.0
+  - Consistent speed between mouse and WASD movement
+  - Improved deltaTime handling to prevent extremely slow movement
+
+- **Technical Improvements**:
+
+  - Implemented safeDeltatime to ensure consistent frame rate handling
+  - Added extensive debug logging for movement calculations
+  - Fixed mesh position updates to ensure visual representation stays in sync
+  - Enhanced rotation speed for smoother turning
+  - Improved collision detection with movement targets
+
+- **Code Architecture**:
+
+  - Modular implementation maintaining the component-based design
+  - Event-driven communication through the EventBus
+  - Clean separation between input, movement, and rendering
+  - Extensive console logging for debugging and performance analysis
+
+- **Benefits**:
+  - More intuitive control scheme that feels familiar to ARPG players
+  - Improved responsiveness and movement speed
+  - Seamless integration between movement and combat
+  - Better visual feedback for player actions
+  - Enhanced gameplay experience similar to popular ARPGs
