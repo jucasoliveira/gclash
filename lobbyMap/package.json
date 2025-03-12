@@ -1,0 +1,17 @@
+{
+  "name": "guild-clash-lobby-map",
+  "version": "1.0.0",
+  "description": "Lobby map for Guild Clash game",
+  "main": "index.html",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^4.3.9"
+  },
+  "dependencies": {
+    "three": "^0.137.5"
+  }
+}

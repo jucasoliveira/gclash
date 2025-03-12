@@ -227,6 +227,14 @@ class Renderer {
   }
 
   /**
+   * Get the THREE.WebGLRenderer instance
+   * @returns {THREE.WebGLRenderer|null} - The renderer instance or null if not initialized
+   */
+  getRenderer() {
+    return this.renderer;
+  }
+
+  /**
    * Set the camera to follow a target entity (Diablo-style)
    * @param {Entity} target - The entity to follow, typically the player
    * @param {boolean} follow - Whether to enable follow mode
