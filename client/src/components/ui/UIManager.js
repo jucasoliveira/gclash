@@ -75,6 +75,11 @@ class UIManager {
       }
     });
     
+    // Listen for death screen event
+    eventBus.on('ui.showDeathScreen', (data = {}) => {
+      this.showDeathScreen(data.attackerId);
+    });
+    
     // Listen for WebSocket tournament messages and relay to eventBus
     eventBus.on('websocket.message', (data) => {
       if (data.type === 'tournamentStarted') {
@@ -144,6 +149,104 @@ class UIManager {
   }
 
   /**
+   * Show the death screen when player dies
+   * @param {string} attackerId - ID of the player who killed the local player
+   */
+  showDeathScreen(attackerId) {
+    console.log('UIManager: Showing death screen, killed by:', attackerId);
+    
+    // Prevent showing multiple death screens
+    const existingDeathScreen = document.getElementById('death-screen');
+    if (existingDeathScreen && existingDeathScreen.style.display === 'flex') {
+      console.log('Death screen already visible, not showing another one');
+      return;
+    }
+    
+    // Get player reference
+    const player = window.game?.player;
+    
+    // Mark that death screen has been shown if player exists
+    if (player) {
+      player.deathScreenShown = true;
+    }
+    
+    // Create or get death screen element
+    let deathScreen = document.getElementById('death-screen');
+    if (!deathScreen) {
+      deathScreen = document.createElement('div');
+      deathScreen.id = 'death-screen';
+      deathScreen.style.position = 'fixed';
+      deathScreen.style.top = '0';
+      deathScreen.style.left = '0';
+      deathScreen.style.width = '100%';
+      deathScreen.style.height = '100%';
+      deathScreen.style.backgroundColor = 'rgba(139, 0, 0, 0.7)';
+      deathScreen.style.color = 'white';
+      deathScreen.style.display = 'flex';
+      deathScreen.style.flexDirection = 'column';
+      deathScreen.style.justifyContent = 'center';
+      deathScreen.style.alignItems = 'center';
+      deathScreen.style.zIndex = '1000';
+      deathScreen.style.fontFamily = 'Arial, sans-serif';
+      deathScreen.style.transition = 'opacity 0.5s ease-in-out';
+      deathScreen.style.opacity = '0';
+      document.body.appendChild(deathScreen);
+    }
+    
+    // Get attacker name or ID
+    const attackerName = attackerId || 'Unknown';
+    
+    // Set content
+    deathScreen.innerHTML = `
+      <h1 style="font-size: 72px; margin-bottom: 20px; text-shadow: 0 0 10px #ff0000;">YOU DIED</h1>
+      <p style="font-size: 24px; margin-bottom: 40px;">Killed by: ${attackerName}</p>
+      <p style="font-size: 18px;">Respawning in <span id="respawn-countdown">5</span> seconds...</p>
+    `;
+    
+    // Show death screen with fade-in
+    deathScreen.style.display = 'flex';
+    setTimeout(() => {
+      deathScreen.style.opacity = '1';
+    }, 10);
+    
+    // Start countdown
+    let countdown = 5;
+    const countdownElement = document.getElementById('respawn-countdown');
+    
+    // Store interval ID so we can clear it if needed
+    if (this._respawnCountdownInterval) {
+      clearInterval(this._respawnCountdownInterval);
+    }
+    
+    this._respawnCountdownInterval = setInterval(() => {
+      countdown--;
+      if (countdownElement) {
+        countdownElement.textContent = countdown;
+      }
+      
+      if (countdown <= 0) {
+        clearInterval(this._respawnCountdownInterval);
+        this._respawnCountdownInterval = null;
+        
+        // Hide death screen with fade-out
+        deathScreen.style.opacity = '0';
+        setTimeout(() => {
+          deathScreen.style.display = 'none';
+          
+          // Respawn player
+          if (window.game && window.game.player && typeof window.game.player._respawn === 'function' && 
+              window.game.player.isDead) { // Only respawn if player is actually dead
+            console.log('UIManager: Triggering player respawn');
+            window.game.player._respawn();
+          } else {
+            console.log('UIManager: Player already respawned or respawn function not available');
+          }
+        }, 500);
+      }
+    }, 1000);
+  }
+
+  /**
    * Clean up resources
    */
   dispose() {
@@ -153,6 +256,7 @@ class UIManager {
     eventBus.off('player.cooldownUpdate');
     eventBus.off('game.started');
     eventBus.off('game.stopped');
+    eventBus.off('ui.showDeathScreen');
     eventBus.off('websocket.message');
 
     // Dispose components

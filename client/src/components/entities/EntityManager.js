@@ -1174,220 +1174,104 @@ class EntityManager {
    * @private
    */
   _handlePlayerDied(data) {
-    console.log(`Received player death event for ${data.id}`);
+    console.log('[EntityManager] Player died:', data);
     
-    // Check if it's the local player
-    if (this.player && data.id === this.player.id) {
-      console.log("⚠️ LOCAL PLAYER DIED - PROCESSING DEATH EFFECT ⚠️");
+    if (!data || !data.id) {
+      console.error('[EntityManager] Invalid player died data:', data);
+      return;
+    }
+    
+    // Check if this is the local player
+    const isLocalPlayer = data.id === this.localPlayerId || (window.webSocketManager && data.id === window.webSocketManager.playerId);
+    
+    if (isLocalPlayer) {
+      console.log('[EntityManager] Local player died');
       
-      // Set player health to 0 (important to update the actual property)
-      this.player.health = 0;
-      
-      // CRITICAL: First hide the mesh to ensure it's not visible
-      if (this.player.mesh) {
-        console.log("Making player mesh invisible on death");
-        this.player.mesh.visible = false;
+      // Check if player is already marked as dead
+      if (this.player && this.player.isDead) {
+        console.log('[EntityManager] Player is already marked as dead, not processing death again');
+        return;
       }
       
-      // ENSURE GAME UI IS UPDATED FOR DEATH
-      // Make sure game UI is visible
-      const gameUI = document.getElementById('game-ui');
-      if (gameUI && !gameUI.classList.contains('visible')) {
-        console.log("Making game UI visible");
-        gameUI.classList.add('visible');
-      }
-      
-      // Direct DOM updates for health bar and stats
-      const healthFill = document.getElementById('health-fill');
-      const playerStats = document.getElementById('player-stats');
-      
-      if (healthFill) {
-        console.log("CRITICAL: Setting health bar to 0%");
-        // Force immediate update
-        healthFill.style.transition = 'none';
-        healthFill.style.width = '0%';
-        healthFill.style.backgroundColor = '#e74c3c'; // Red
-        healthFill.offsetHeight; // Force reflow
-      } else {
-        console.error("CRITICAL ERROR: Could not find health-fill element on death!");
-        // Try to recreate it
-        const healthBar = document.querySelector('.health-bar');
-        if (healthBar) {
-          console.log("Recreating missing health fill element");
-          const newHealthFill = document.createElement('div');
-          newHealthFill.id = 'health-fill';
-          newHealthFill.className = 'health-fill';
-          newHealthFill.style.width = '0%';
-          newHealthFill.style.backgroundColor = '#e74c3c';
-          healthBar.innerHTML = '';
-          healthBar.appendChild(newHealthFill);
+      // Set health to 0
+      if (this.player) {
+        if (this.player.stats) {
+          this.player.stats.health = 0;
         }
+        this.player.health = 0;
+        this.player._updateHealthUI();
+        
+        // Mark as dead but DON'T show death screen or effects
+        // Let WebSocketManager handle that part
+        console.log('[EntityManager] Marked player as dead, letting WebSocketManager handle death screen');
       }
-      
-      if (playerStats) {
-        console.log("CRITICAL: Setting player stats text to show 0 health");
-        playerStats.textContent = `Health: 0/${this.player.stats.health}`;
-      } else {
-        console.error("CRITICAL ERROR: Could not find player-stats element on death!");
-      }
-      
-      // Show death effects
-      console.log("Showing player death particles");
-      // Call _createDeathParticles directly to ensure particles are shown
-      this.player._createDeathParticles();
-      
-      // Ensure all pending health updates are applied before showing death screen
-      setTimeout(() => {
-        console.log("Showing death overlay screen");
-        // Then show the full death overlay
-        this.player._showDeathEffect();
-      }, 50);
       
       return;
     }
     
     // Handle other player death
     const player = this.getEntity(data.id);
+    
     if (player) {
-      console.log(`Other player ${data.id} died`);
+      console.log(`[EntityManager] Other player died: ${data.id}`);
       
-      // Set player health to 0
+      // Check if player is already marked as dead
+      if (player.isDead) {
+        console.log(`[EntityManager] Other player ${data.id} is already marked as dead, not processing death again`);
+        return;
+      }
+      
+      // Set health to 0
       player.health = 0;
-      
-      // Update visuals
-      if (player.type === 'otherPlayer') {
-        console.log(`Processing death for other player ${data.id}`);
-        
-        // Update health bar
-        if (typeof player._createHealthIndicator === 'function') {
-          console.log(`Updating health indicator for ${data.id} to show 0 health`);
-          player._createHealthIndicator();
-        }
-        
-        // Hide the mesh immediately
-        if (player.mesh) {
-          console.log(`Hiding mesh for player ${data.id}`);
-          player.mesh.visible = false;
-        }
-        
-        // Show death effect
-        if (typeof player._showDeathEffect === 'function') {
-          console.log(`Showing death effect for player ${data.id}`);
-          player._showDeathEffect();
-        } else {
-          console.warn(`Player ${data.id} doesn't have _showDeathEffect method, using fallback`);
-          // Fallback: create death particles at player position
-          this._createDeathParticles(player.position.clone());
-        }
-        
-        // Create a text effect showing "DESTROYED"
-        this._createDestroyedText(player.position.clone());
-      } else {
-        console.log(`Player ${data.id} is not an otherPlayer (type: ${player.type}), using basic death handling`);
-        
-        // Basic handling for non-otherPlayer entities
-        if (player.mesh) {
-          player.mesh.visible = false;
-        }
-        
-        // Create death particles at player position
-        this._createDeathParticles(player.position.clone());
+      if (player.stats) {
+        player.stats.health = 0;
       }
       
-      console.log(`Death effect shown for player ${data.id}`);
+      // Mark as dead
+      player.isDead = true;
+      
+      // Update health bar if method exists
+      if (typeof player._updateHealthBar === 'function') {
+        player._updateHealthBar();
+      }
+      
+      // Hide mesh
+      if (player.mesh) {
+        player.mesh.visible = false;
+      }
+      
+      // Show death effect if method exists
+      if (typeof player._showDeathEffect === 'function') {
+        player._showDeathEffect();
+      }
     } else {
-      console.warn(`Player ${data.id} not found for death effect`);
+      console.warn(`[EntityManager] Could not find player ${data.id} to handle death`);
     }
   }
   
   /**
-   * Create death particle effect
-   * @param {THREE.Vector3} position - Position for the effect
-   * @private
-   */
-  _createDeathParticles(position) {
-    // Create particles
-    const particleCount = 20;
-    const particles = new THREE.Group();
-    
-    for (let i = 0; i < particleCount; i++) {
-      const geometry = new THREE.SphereGeometry(0.1, 4, 4);
-      const material = new THREE.MeshBasicMaterial({ 
-        color: 0xff0000,
-        transparent: true,
-        opacity: 0.8
-      });
-      
-      const particle = new THREE.Mesh(geometry, material);
-      
-      // Set random position offset
-      particle.position.set(
-        (Math.random() - 0.5) * 0.5,
-        (Math.random() - 0.5) * 1.5,
-        (Math.random() - 0.5) * 0.5
-      );
-      
-      // Set random velocity
-      particle.userData.velocity = new THREE.Vector3(
-        (Math.random() - 0.5) * 0.05,
-        Math.random() * 0.08,
-        (Math.random() - 0.5) * 0.05
-      );
-      
-      particles.add(particle);
-    }
-    
-    // Position at player position
-    particles.position.copy(position);
-    
-    // Add to scene
-    renderer.addObject(`death-particles-${Date.now()}`, particles, true, 2);
-    
-    // Animate particles
-    const startTime = Date.now();
-    const duration = 2000; // 2 seconds
-    
-    const animateParticles = () => {
-      const elapsed = Date.now() - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      
-      if (progress < 1 && particles.parent) {
-        // Update particle positions
-        particles.children.forEach(particle => {
-          const velocity = particle.userData.velocity;
-          particle.position.add(velocity);
-          
-          // Add gravity effect
-          velocity.y -= 0.002;
-          
-          // Fade out
-          if (particle.material.opacity > 0.01) {
-            particle.material.opacity -= 0.01;
-          }
-        });
-        
-        requestAnimationFrame(animateParticles);
-      }
-    };
-    
-    // Start animation
-    animateParticles();
-  }
-  
-  /**
-   * Handle player respawned event from network
-   * @param {Object} data - Respawn data from server
+   * Handle player respawn event
+   * @param {Object} data - Respawn data
    * @private
    */
   _handlePlayerRespawned(data) {
-    console.log(`Received player respawn event for ${data.id}`, data);
+    console.log(`[ENTITY MANAGER] Received player respawn event for ${data.id}`, data);
     
     // Handle local player respawn
     if (this.player && data.id === this.player.id) {
-      console.log("Local player respawned from network event");
+      console.log("[ENTITY MANAGER] Local player respawned from network event");
       
-      // Set player health
-      this.player.health = data.health || this.player.stats.health;
+      // Reset isDead flag
+      this.player.isDead = false;
+      
+      // Set player health with validation
+      if (typeof data.health === 'number' && !isNaN(data.health)) {
+        this.player.health = data.health;
+      } else if (this.player.stats && typeof this.player.stats.health === 'number') {
+        this.player.health = this.player.stats.health;
+      } else {
+        this.player.health = 100; // Default
+      }
       
       // Update UI
       this.player._updateHealthUI();
@@ -1415,18 +1299,37 @@ class EntityManager {
     // Handle other player respawn
     const player = this.getEntity(data.id);
     if (player) {
-      console.log(`Other player ${data.id} respawned with health=${data.health}`);
+      console.log(`[ENTITY MANAGER] Other player ${data.id} respawned with health=${data.health}`);
       
-      // Reset health
-      player.health = data.health || (player.stats ? player.stats.health : 100);
+      // Reset isDead flag
+      player.isDead = false;
       
-      // CRITICAL: Handle all player types including our own player
+      // Reset health with validation
+      if (typeof data.health === 'number' && !isNaN(data.health)) {
+        player.health = data.health;
+      } else if (player.stats && typeof player.stats.health === 'number') {
+        player.health = player.stats.health;
+      } else {
+        // Default health based on class
+        const defaultHealthByClass = {
+          'CLERK': 80,
+          'WARRIOR': 120,
+          'RANGER': 100
+        };
+        player.health = defaultHealthByClass[player.classType] || 100;
+      }
+      
+      console.log(`[ENTITY MANAGER] Set player ${data.id} health to ${player.health}`);
+      
       // Update mesh visibility and position
       if (player.mesh) {
-        console.log(`Making player ${data.id} mesh visible again`);
+        console.log(`[ENTITY MANAGER] Making player ${data.id} mesh visible again`);
         player.mesh.visible = true;
+      } else if (player.type === 'otherPlayer' && typeof player._createPlayerMesh === 'function') {
+        console.log(`[ENTITY MANAGER] Recreating mesh for player ${data.id}`);
+        player._createPlayerMesh();
       } else {
-        console.warn(`Player ${data.id} has no mesh on respawn`);
+        console.warn(`[ENTITY MANAGER] Player ${data.id} has no mesh on respawn and cannot recreate it`);
       }
       
       // Update position
@@ -1443,18 +1346,37 @@ class EntityManager {
         }
       }
       
-      // Additional handling for other players
+      // Update health bar for other players
       if (player.type === 'otherPlayer') {
-        // Update health bar
-        if (typeof player._createHealthIndicator === 'function') {
-          player._createHealthIndicator();
+        if (typeof player._updateHealthBar === 'function') {
+          player._updateHealthBar();
+        } else if (typeof player._createHealthBar === 'function') {
+          player._createHealthBar();
         }
       }
       
       // Create respawn effect
       this._createRespawnEffect(player.position.clone());
       
-      console.log(`Player ${data.id} fully respawned and visible at position ${JSON.stringify(data.position)}`);
+      console.log(`[ENTITY MANAGER] Player ${data.id} fully respawned and visible at position ${JSON.stringify(data.position)}`);
+    } else {
+      console.warn(`[ENTITY MANAGER] Could not find player ${data.id} to handle respawn`);
+      
+      // Try to recreate the player if it doesn't exist
+      if (data.id && data.position) {
+        console.log(`[ENTITY MANAGER] Attempting to recreate player ${data.id} from respawn data`);
+        
+        // Create minimal player data
+        const playerData = {
+          id: data.id,
+          position: data.position,
+          health: data.health,
+          class: data.classType || 'WARRIOR' // Default class if not provided
+        };
+        
+        // Create the player
+        this._createOtherPlayer(playerData);
+      }
     }
   }
   

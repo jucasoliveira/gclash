@@ -216,6 +216,21 @@ All messages are JSON objects with a `type` field indicating the message type. A
 }
 ```
 
+#### playerRespawn
+
+```javascript
+{
+  type: 'playerRespawn',
+  id: 'player_id',
+  health: 100, // Current health after respawn
+  position: {
+    x: 10.5,
+    y: 0.8,
+    z: -5.2
+  } // New position after respawn
+}
+```
+
 #### error
 
 ```javascript
@@ -408,6 +423,31 @@ All messages are JSON objects with a `type` field indicating the message type. A
   tournamentId: 'tournament_id',
   winnerId: 'winner_id',
   winnerName: 'Winner Name'
+}
+```
+
+#### playerDied
+
+```javascript
+{
+  type: 'playerDied',
+  id: 'player_id',
+  attackerId: 'attacker_id'
+}
+```
+
+#### playerRespawn
+
+```javascript
+{
+  type: 'playerRespawn',
+  id: 'player_id',
+  health: 100, // Current health after respawn
+  position: {
+    x: 10.5,
+    y: 0.8,
+    z: -5.2
+  } // New position after respawn
 }
 ```
 

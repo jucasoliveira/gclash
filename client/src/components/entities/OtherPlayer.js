@@ -96,29 +96,59 @@ class OtherPlayer extends Entity {
     // Listen for respawn events from network
     eventBus.on(`network.playerRespawned`, (data) => {
       if (data.id === this.id) {
-        console.log(`[OTHER_PLAYER] Player ${this.id} respawned`);
-        if (this.mesh) {
-          this.mesh.visible = true;
-          this.health = data.health || this.stats.health;
-          this._updateHealthBar();
-          
-          // Update position if provided
-          if (data.position) {
-            this.position.set(
-              data.position.x,
-              data.position.y,
-              data.position.z
-            );
-            this.targetPosition.copy(this.position);
-          }
-          
-          // Ensure health bar is visible
-          if (this.healthBar) {
-            this.healthBar.visible = true;
-          } else {
-            this._createHealthBar();
-          }
+        console.log(`[OTHER_PLAYER] Player ${this.id} respawned with health=${data.health}`);
+        
+        // Reset isDead flag
+        this.isDead = false;
+        
+        // Set health with validation
+        if (typeof data.health === 'number' && !isNaN(data.health)) {
+          this.health = data.health;
+        } else if (this.stats && typeof this.stats.health === 'number') {
+          this.health = this.stats.health;
+          console.log(`[OTHER_PLAYER] Using stats.health (${this.stats.health}) for respawn`);
+        } else {
+          // Default health based on class
+          const defaultHealthByClass = {
+            'CLERK': 80,
+            'WARRIOR': 120,
+            'RANGER': 100
+          };
+          this.health = defaultHealthByClass[this.classType] || 100;
+          console.log(`[OTHER_PLAYER] Using default health (${this.health}) for respawn`);
         }
+        
+        // Update position if provided
+        if (data.position) {
+          this.position.set(
+            data.position.x,
+            data.position.y,
+            data.position.z
+          );
+          this.targetPosition.copy(this.position);
+        }
+        
+        // Check if mesh exists
+        if (this.mesh) {
+          console.log(`[OTHER_PLAYER] Making existing mesh visible for player ${this.id}`);
+          this.mesh.visible = true;
+          
+          // Update mesh position
+          this.mesh.position.copy(this.position);
+        } else {
+          console.log(`[OTHER_PLAYER] Mesh doesn't exist for player ${this.id}, creating new mesh`);
+          this._createPlayerMesh();
+        }
+        
+        // Update health bar
+        if (this.healthBar) {
+          this.healthBar.visible = true;
+          this._updateHealthBar();
+        } else {
+          this._createHealthBar();
+        }
+        
+        console.log(`[OTHER_PLAYER] Player ${this.id} fully respawned with health=${this.health}`);
       }
     });
     
@@ -339,7 +369,7 @@ class OtherPlayer extends Entity {
     console.log(`[DAMAGE] OtherPlayer ${this.id} taking ${amount} damage. Current health: ${this.health}/${this.stats.health}`);
     
     // Skip if already dead
-    if (this.health <= 0) {
+    if (this.isDead || this.health <= 0) {
       console.log(`[DAMAGE] OtherPlayer ${this.id} already dead, ignoring damage`);
       return true;
     }
@@ -380,8 +410,11 @@ class OtherPlayer extends Entity {
     this._updateHealthBar();
     
     // Check if player died
-    if (this.health <= 0) {
+    if (this.health <= 0 && !this.isDead) {
       console.log(`[DEATH] OtherPlayer ${this.id} died from damage`);
+      
+      // Mark as dead
+      this.isDead = true;
       
       // Hide player mesh
       if (this.mesh) {
@@ -405,7 +438,7 @@ class OtherPlayer extends Entity {
    * @private
    */
   _updateHealthBar() {
-    console.log(`Updating health bar for ${this.id}, health: ${this.health}/${this.stats.health}`);
+    console.log(`Updating health bar for ${this.id}, health: ${this.health}/${this.stats?.health}`);
     
     // Skip if no mesh
     if (!this.mesh) {
@@ -417,10 +450,43 @@ class OtherPlayer extends Entity {
       this._createHealthBar();
     }
     
+    // Validate health values to prevent NaN errors
+    if (typeof this.health !== 'number' || isNaN(this.health)) {
+      console.warn(`[HEALTH] Invalid health value for ${this.id}, resetting to default`);
+      
+      // Set default health based on class
+      const defaultHealthByClass = {
+        'CLERK': 80,
+        'WARRIOR': 120,
+        'RANGER': 100
+      };
+      this.health = defaultHealthByClass[this.classType] || 100;
+    }
+    
+    // Validate stats.health
+    if (!this.stats || typeof this.stats.health !== 'number' || isNaN(this.stats.health) || this.stats.health <= 0) {
+      console.warn(`[HEALTH] Invalid stats.health for ${this.id}, setting default based on class`);
+      
+      if (!this.stats) {
+        this.stats = {};
+      }
+      
+      // Set default health based on class
+      const defaultHealthByClass = {
+        'CLERK': 80,
+        'WARRIOR': 120,
+        'RANGER': 100
+      };
+      this.stats.health = defaultHealthByClass[this.classType] || 100;
+    }
+    
     // Update health bar fill
     if (this.healthBarFill) {
+      // Calculate health percentage, ensuring it's between 0-100%
       const healthPercent = Math.max(0, Math.min(1, this.health / this.stats.health));
       this.healthBarFill.scale.x = healthPercent;
+      
+      console.log(`[HEALTH] Updated health bar for ${this.id} to ${(healthPercent * 100).toFixed(1)}%`);
       
       // Update color based on health percentage
       this._updateHealthBarColor(healthPercent);
@@ -553,7 +619,15 @@ class OtherPlayer extends Entity {
    * @private
    */
   _showDeathEffect() {
-    if (!this.mesh) return;
+    console.log(`[DEATH] Showing death effect for player ${this.id}`);
+    
+    // Ensure player is marked as dead
+    this.isDead = true;
+    
+    if (!this.mesh) {
+      console.log(`[DEATH] No mesh found for player ${this.id}, skipping death effect`);
+      return;
+    }
     
     // Create particles
     const particleCount = 20;
@@ -562,7 +636,7 @@ class OtherPlayer extends Entity {
     for (let i = 0; i < particleCount; i++) {
       const geometry = new THREE.SphereGeometry(0.1, 4, 4);
       const material = new THREE.MeshBasicMaterial({ 
-        color: this.stats.color,
+        color: this.stats.color || 0xff0000,
         transparent: true,
         opacity: 0.8
       });
@@ -597,34 +671,157 @@ class OtherPlayer extends Entity {
       duration: 2
     });
     
-    // Hide player mesh
+    // First hide player mesh
     if (this.mesh) {
+      console.log(`[DEATH] Hiding mesh for player ${this.id}`);
       this.mesh.visible = false;
+      
+      // Hide health bar if it exists
+      if (this.healthBar) {
+        console.log(`[DEATH] Hiding health bar for player ${this.id}`);
+        this.healthBar.visible = false;
+      }
+      
+      // Remove mesh from scene after a short delay
+      setTimeout(() => {
+        console.log(`[DEATH] Removing mesh for player ${this.id} from scene`);
+        // Remove mesh from scene
+        eventBus.emit('renderer.removeObject', {
+          id: `player-${this.id}`
+        });
+        
+        // Clear the reference
+        this.mesh = null;
+        
+        // Also notify EntityManager to remove this entity
+        eventBus.emit('entity.remove', {
+          id: this.id,
+          type: 'otherPlayer'
+        });
+        
+        console.log(`[DEATH] Player ${this.id} completely removed from scene`);
+      }, 2000); // Increased delay to allow death effect to complete
     }
     
     // Animate particles
+    const startTime = Date.now();
+    const duration = 2000; // 2 seconds
+    
     const animateParticles = () => {
       if (!particles.parent) return;
       
-      // Update particle positions
-      particles.children.forEach(particle => {
-        const velocity = particle.userData.velocity;
-        particle.position.add(velocity);
-        
-        // Add gravity effect
-        velocity.y -= 0.002;
-        
-        // Fade out
-        if (particle.material.opacity > 0.01) {
-          particle.material.opacity -= 0.01;
-        }
-      });
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
       
-      requestAnimationFrame(animateParticles);
+      if (progress < 1) {
+        // Update particle positions
+        particles.children.forEach(particle => {
+          const velocity = particle.userData.velocity;
+          particle.position.add(velocity);
+          
+          // Add gravity effect
+          velocity.y -= 0.002;
+          
+          // Fade out
+          if (particle.material.opacity > 0.01) {
+            particle.material.opacity -= 0.01;
+          }
+        });
+        
+        requestAnimationFrame(animateParticles);
+      }
     };
     
     // Start animation
     requestAnimationFrame(animateParticles);
+    
+    // Create a "destroyed" text effect
+    this._createDestroyedText();
+  }
+  
+  /**
+   * Create a "DESTROYED" text effect
+   * @private
+   */
+  _createDestroyedText() {
+    // Create a canvas for the text
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    
+    // Draw text
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.font = 'bold 36px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    // Red outline
+    ctx.strokeStyle = '#ff0000';
+    ctx.lineWidth = 4;
+    ctx.strokeText('DESTROYED', canvas.width / 2, canvas.height / 2);
+    
+    // White fill
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('DESTROYED', canvas.width / 2, canvas.height / 2);
+    
+    // Create texture from canvas
+    const texture = new THREE.CanvasTexture(canvas);
+    
+    // Create material with the texture
+    const material = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      opacity: 1.0,
+      side: THREE.DoubleSide
+    });
+    
+    // Create plane geometry for the text
+    const geometry = new THREE.PlaneGeometry(2, 0.5);
+    
+    // Create mesh
+    const textMesh = new THREE.Mesh(geometry, material);
+    
+    // Position above the player
+    textMesh.position.copy(this.position);
+    textMesh.position.y += 2.0;
+    
+    // Make it face the camera
+    textMesh.userData.isBillboard = true;
+    
+    // Add to scene
+    eventBus.emit('renderer.addObject', {
+      id: `destroyed-text-${this.id}-${Date.now()}`,
+      object: textMesh,
+      temporary: true,
+      duration: 2
+    });
+    
+    // Animate the text
+    const startTime = Date.now();
+    const duration = 2000; // 2 seconds
+    
+    const animate = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = elapsed / duration;
+      
+      if (progress < 1) {
+        // Move up slowly
+        textMesh.position.y += 0.005;
+        
+        // Fade out near the end
+        if (progress > 0.7) {
+          const fadeProgress = (progress - 0.7) / 0.3;
+          material.opacity = 1 - fadeProgress;
+        }
+        
+        requestAnimationFrame(animate);
+      }
+    };
+    
+    // Start animation
+    requestAnimationFrame(animate);
   }
 
   /**

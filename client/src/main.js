@@ -274,70 +274,83 @@ window.testConnection = () => {
 window.showDeathScreen = (attackerId) => {
   console.log('Global showDeathScreen called with attacker:', attackerId);
   
-  // Create death screen if it doesn't exist
-  let deathScreen = document.getElementById('death-screen');
-  if (!deathScreen) {
-    deathScreen = document.createElement('div');
-    deathScreen.id = 'death-screen';
-    deathScreen.style.position = 'fixed';
-    deathScreen.style.top = '0';
-    deathScreen.style.left = '0';
-    deathScreen.style.width = '100%';
-    deathScreen.style.height = '100%';
-    deathScreen.style.backgroundColor = 'rgba(139, 0, 0, 0.7)';
-    deathScreen.style.color = 'white';
-    deathScreen.style.display = 'flex';
-    deathScreen.style.flexDirection = 'column';
-    deathScreen.style.justifyContent = 'center';
-    deathScreen.style.alignItems = 'center';
-    deathScreen.style.zIndex = '1000';
-    deathScreen.style.fontFamily = 'Arial, sans-serif';
-    deathScreen.style.transition = 'opacity 0.5s ease-in-out';
-    deathScreen.style.opacity = '0';
-    document.body.appendChild(deathScreen);
-  }
-  
-  // Get attacker name or ID
-  const attackerName = attackerId || 'Unknown';
-  
-  // Set content
-  deathScreen.innerHTML = `
-    <h1 style="font-size: 72px; margin-bottom: 20px; text-shadow: 0 0 10px #ff0000;">YOU DIED</h1>
-    <p style="font-size: 24px; margin-bottom: 40px;">Killed by: ${attackerName}</p>
-    <p style="font-size: 18px;">Respawning in <span id="respawn-countdown">5</span> seconds...</p>
-  `;
-  
-  // Show death screen with fade-in
-  deathScreen.style.display = 'flex';
-  setTimeout(() => {
-    deathScreen.style.opacity = '1';
-  }, 10);
-  
-  // Start countdown
-  let countdown = 5;
-  const countdownElement = document.getElementById('respawn-countdown');
-  
-  const countdownInterval = setInterval(() => {
-    countdown--;
-    if (countdownElement) {
-      countdownElement.textContent = countdown;
-    }
-    
-    if (countdown <= 0) {
-      clearInterval(countdownInterval);
+  // Use the UIManager to show the death screen
+  if (window.game && window.game.uiManager) {
+    window.game.uiManager.showDeathScreen(attackerId);
+  } else {
+    // Fallback to event bus if UIManager is not available
+    import('./components/core/EventBus.js').then(module => {
+      const eventBus = module.default;
+      eventBus.emit('ui.showDeathScreen', { attackerId });
+    }).catch(error => {
+      console.error('Failed to import EventBus:', error);
       
-      // Hide death screen with fade-out
-      deathScreen.style.opacity = '0';
+      // Last resort fallback - create a simple death screen
+      let deathScreen = document.getElementById('death-screen');
+      if (!deathScreen) {
+        deathScreen = document.createElement('div');
+        deathScreen.id = 'death-screen';
+        deathScreen.style.position = 'fixed';
+        deathScreen.style.top = '0';
+        deathScreen.style.left = '0';
+        deathScreen.style.width = '100%';
+        deathScreen.style.height = '100%';
+        deathScreen.style.backgroundColor = 'rgba(139, 0, 0, 0.7)';
+        deathScreen.style.color = 'white';
+        deathScreen.style.display = 'flex';
+        deathScreen.style.flexDirection = 'column';
+        deathScreen.style.justifyContent = 'center';
+        deathScreen.style.alignItems = 'center';
+        deathScreen.style.zIndex = '1000';
+        deathScreen.style.fontFamily = 'Arial, sans-serif';
+        deathScreen.style.transition = 'opacity 0.5s ease-in-out';
+        deathScreen.style.opacity = '0';
+        document.body.appendChild(deathScreen);
+      }
+      
+      // Get attacker name or ID
+      const attackerName = attackerId || 'Unknown';
+      
+      // Set content
+      deathScreen.innerHTML = `
+        <h1 style="font-size: 72px; margin-bottom: 20px; text-shadow: 0 0 10px #ff0000;">YOU DIED</h1>
+        <p style="font-size: 24px; margin-bottom: 40px;">Killed by: ${attackerName}</p>
+        <p style="font-size: 18px;">Respawning in <span id="respawn-countdown">5</span> seconds...</p>
+      `;
+      
+      // Show death screen with fade-in
+      deathScreen.style.display = 'flex';
       setTimeout(() => {
-        deathScreen.style.display = 'none';
-        
-        // Respawn player
-        if (Game.player && typeof Game.player._respawn === 'function') {
-          Game.player._respawn();
+        deathScreen.style.opacity = '1';
+      }, 10);
+      
+      // Start countdown
+      let countdown = 5;
+      const countdownElement = document.getElementById('respawn-countdown');
+      
+      const countdownInterval = setInterval(() => {
+        countdown--;
+        if (countdownElement) {
+          countdownElement.textContent = countdown;
         }
-      }, 500);
-    }
-  }, 1000);
+        
+        if (countdown <= 0) {
+          clearInterval(countdownInterval);
+          
+          // Hide death screen with fade-out
+          deathScreen.style.opacity = '0';
+          setTimeout(() => {
+            deathScreen.style.display = 'none';
+            
+            // Respawn player
+            if (window.game && window.game.player && typeof window.game.player._respawn === 'function') {
+              window.game.player._respawn();
+            }
+          }, 500);
+        }
+      }, 1000);
+    });
+  }
 };
 
 // Function to toggle tournament bracket visibility

@@ -270,7 +270,43 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
   - Corrected health synchronization across multiple clients
   - Implemented proper cleanup of temporary combat effects
 
-### Step 13: Advanced HUD Implementation with Resource Systems
+### Step 13: Death and Respawn System Improvements
+
+- Fixed critical issues with the death and respawn system:
+  - Resolved NaN% width errors in health UI during respawn
+  - Fixed duplicate death screen display issues
+  - Ensured other players can see respawned players correctly
+  - Improved synchronization of player death and respawn events across clients
+- Enhanced the Player class:
+  - Improved `takeDamage` method to validate health values and prevent processing damage for already dead players
+  - Enhanced `_handleDeath` method to properly set the death state and show death effects
+  - Fixed `_respawn` method to correctly reset health values and update the health UI
+  - Added validation in `_updateHealthUI` to handle invalid health values and prevent NaN errors
+- Improved the OtherPlayer class:
+  - Enhanced respawn handling to reset the isDead flag and validate health values
+  - Added mesh recreation logic if the mesh doesn't exist during respawn
+  - Improved health bar updates to handle NaN values and ensure accurate health percentage calculations
+- Enhanced the WebSocketManager:
+  - Added proper handling for 'playerRespawn' message type
+  - Improved death state management to prevent showing the death screen multiple times
+  - Added validation for health values in network messages
+- Improved the EntityManager:
+  - Enhanced `_handlePlayerDied` method to prevent duplicate death processing
+  - Improved `_handlePlayerRespawned` method to reset the isDead flag and validate health values
+- Enhanced the UIManager:
+
+  - Improved `showDeathScreen` method to prevent multiple death screens from being displayed
+  - Added proper management of the respawn countdown timer
+  - Ensured the respawn function is only called if the player is actually dead
+
+- Benefits of these improvements:
+  - More reliable death and respawn experience for players
+  - Elimination of visual glitches during respawn
+  - Consistent health display across all game states
+  - Improved multiplayer synchronization for death and respawn events
+  - Better error handling for edge cases in the combat system
+
+### Step 14: Advanced HUD Implementation with Resource Systems
 
 - Created a new component-based UI architecture:
   - Implemented UIManager as central manager for all UI components
@@ -307,7 +343,7 @@ Guild Clash is a browser-based isometric 3D multiplayer game using three.js, fea
   - Ensured smooth migration path for future development
   - Added extensive debugging and logging
 
-### Step 14: WebSocket Implementation for Improved Multiplayer
+### Step 15: WebSocket Implementation for Improved Multiplayer
 
 - Replaced WebRTC with WebSocket for more reliable multiplayer communication:
   - Created a new `WebSocketManager` class to handle all network communication
@@ -1563,3 +1599,37 @@ Implemented a comprehensive user authentication system with the following featur
   - Create more sophisticated obstacle and terrain generation
   - Add interactive map elements like destructible objects
   - Implement map-specific sound effects and ambient audio
+
+### Step 26: Tournament and Combat System Enhancements
+
+#### Tournament Player Visibility Improvements
+
+- Enhanced the `joinTournament` method in WebSocketManager:
+  - Added automatic setting of game mode to 'tournament' when joining
+  - Implemented request for tournament players after a delay
+  - Added request for existing players with the tournament ID
+  - Implemented call to `forceUpdatePlayerPositions` to ensure all players are visible
+  - Added a second update of player positions after a longer delay
+
+#### Death and Respawn System Fixes
+
+- Fixed critical issues with the death and respawn system:
+
+  - Resolved NaN% width errors in health UI during respawn
+  - Fixed duplicate death screen display issues
+  - Ensured other players can see respawned players correctly
+  - Improved synchronization of player death and respawn events
+
+- Enhanced key components:
+
+  - Player: Improved health validation and death handling
+  - OtherPlayer: Added mesh recreation logic for respawning
+  - WebSocketManager: Added proper handling for 'playerRespawn' messages
+  - EntityManager: Prevented duplicate death processing
+  - UIManager: Improved death screen and respawn countdown management
+
+- Benefits:
+  - More reliable player experience in tournaments
+  - Elimination of visual glitches during combat
+  - Consistent health display across all game states
+  - Improved multiplayer synchronization

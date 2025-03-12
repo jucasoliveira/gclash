@@ -716,202 +716,77 @@ class Player extends Entity {
   }
 
   /**
-   * Take damage
-   * @param {number} amount - Amount of damage to take
-   * @param {boolean} fromNetwork - Whether this damage is from a network event
-   * @returns {boolean} - True if player died, false otherwise
+   * Handle player death
+   * @private
+   * @param {string} attackerId - ID of the player who killed this player
    */
-  takeDamage(amount, fromNetwork = false) {
-    console.log(`[PLAYER] Taking ${amount} damage. Current health: ${this.health}/${this.stats.health}`);
-    
-    // Skip if already dead
-    if (this.health <= 0) {
-      console.log('[PLAYER] Already dead, ignoring damage');
-      return true;
+  _handleDeath(attackerId) {
+    // Prevent multiple death handling
+    if (this.isDead) {
+      console.log('Player already dead, ignoring duplicate death handling');
+      return;
     }
     
-    // Skip if amount is invalid
-    if (!amount || amount <= 0) {
-      console.log('[PLAYER] Invalid damage amount:', amount);
-      return false;
-    }
+    // Set death flag
+    this.isDead = true;
+    console.log('Player died, killed by:', attackerId);
     
-    // Ensure health is a valid number
-    if (typeof this.health !== 'number' || isNaN(this.health)) {
-      console.warn('[PLAYER] Invalid health value, resetting to max health');
-      this.health = this.stats.health;
-    }
+    // Ensure health is exactly 0
+    this.stats.health = 0;
+    this.health = 0;
     
-    // Ensure stats.health is valid based on class
-    if (!this.stats.health) {
-      console.warn('[PLAYER] Missing stats.health, using default values based on class');
-      // Set default health values based on class
-      const defaultHealthByClass = {
-        'CLERK': 80,
-        'WARRIOR': 120,
-        'RANGER': 100
-      };
-      this.stats.health = defaultHealthByClass[this.classType] || 100;
-    }
-    
-    // Calculate original health
-    const oldHealth = this.health;
-    
-    // Apply damage
-    this.health = Math.max(0, this.health - amount);
-    
-    console.log(`[PLAYER] Health updated: ${oldHealth} -> ${this.health} (${amount} damage)`);
-    
-    // CRITICAL: Direct DOM manipulation for health bar
+    // Update health UI to show 0 health
     this._updateHealthUI();
     
-    // Play damage effect
-    this._playDamageEffect();
+    // Show death effect
+    this._showDeathEffect();
     
-    // If health update didn't come from the network, send it
-    if (!fromNetwork) {
-      console.log('[PLAYER] Sending health update to server');
-      webSocketManager.updateHealth({
-        id: this.id,
-        health: this.health,
-        maxHealth: this.stats.health,
-        damage: amount
-      });
-    }
-    
-    // Check if player died
-    if (this.health <= 0) {
-      console.log('[PLAYER] Player died');
+    // Hide player mesh
+    if (this.mesh) {
+      this.mesh.visible = false;
       
-      // Hide player mesh
-      if (this.mesh) {
-        this.mesh.visible = false;
-        console.log('[PLAYER] Making player mesh invisible on death');
+      // Hide health bar if it exists
+      if (this.healthBar) {
+        this.healthBar.visible = false;
       }
       
-      // Show death effect
-      this._showDeathEffect();
-      
-      // Emit death event
-      eventBus.emit('player.died', { id: this.id });
-      
-      // If death update didn't come from network, send it
-      if (!fromNetwork) {
-        console.log('[PLAYER] Sending death notification to server');
-        webSocketManager.sendDeath({
-          id: this.id
-        });
-      }
-      
-      // If this is the local player, show death screen
-      if (this.id === webSocketManager.playerId) {
-        console.log('[PLAYER] Using global death screen');
-        if (window.showDeathScreen) {
-          window.showDeathScreen('Unknown'); // We don't know the attacker here
-        }
-      }
-      
-      // Auto-respawn after a delay
-      console.log('Auto-respawning player after death');
+      // Remove mesh from scene after a short delay
       setTimeout(() => {
-        this._respawn();
-      }, 3000);
-      
-      // Return true to indicate death
-      return true;
+        // Remove mesh from scene
+        eventBus.emit('renderer.removeObject', {
+          id: `player-${this.id}`
+        });
+        
+        // Clear the reference
+        this.mesh = null;
+      }, 100);
     }
     
-    // Return false to indicate player is still alive
-    return false;
+    // Notify server about death
+    eventBus.emit('network.send', {
+      type: 'playerDied',
+      data: {
+        id: this.id,
+        attackerId: attackerId
+      }
+    });
+    
+    // Show death screen with attacker ID after a short delay to allow effects to start
+    setTimeout(() => {
+      eventBus.emit('ui.showDeathScreen', {
+        attackerId: attackerId
+      });
+      
+      // Mark that death screen has been shown
+      this.deathScreenShown = true;
+    }, 100);
   }
   
   /**
-   * Show death effect when player health reaches zero
+   * Show death effect when health reaches zero
    * @private
    */
   _showDeathEffect() {
-    console.log('Player died!');
-    
-    // Double-check that player health is 0
-    this.health = 0;
-    
-    // Force update the health UI directly
-    this._updateHealthUI();
-    
-    // Hide the player mesh
-    if (this.mesh) {
-      console.log('Making player mesh invisible on death');
-      this.mesh.visible = false;
-    }
-    
-    // Create particle explosion like OtherPlayer
-    this._createDeathParticles();
-    
-    // Use the global death screen if available
-    if (window.showDeathScreen) {
-      console.log('Using global death screen');
-      window.showDeathScreen();
-      
-      // Respawn player after a delay
-      setTimeout(() => {
-        console.log('Auto-respawning player after death');
-        this._respawn();
-      }, 3500); // Wait for countdown plus transition
-      
-      return;
-    }
-    
-    // Fallback: Use DOM-based death overlay if global function not available
-    console.log('Using fallback death overlay');
-    const existingOverlay = document.querySelector('.death-overlay');
-    if (existingOverlay) {
-      // Use the existing overlay
-      console.log('Using existing death overlay element');
-      existingOverlay.classList.add('visible');
-      
-      // Respawn player after a delay
-      setTimeout(() => {
-        existingOverlay.classList.remove('visible');
-        this._respawn();
-      }, 3000);
-      
-      return;
-    }
-    
-    // Last resort: Create a simple death overlay
-    console.log('Creating simple death overlay as last resort');
-    const deathOverlay = document.createElement('div');
-    deathOverlay.style.position = 'fixed';
-    deathOverlay.style.top = '0';
-    deathOverlay.style.left = '0';
-    deathOverlay.style.width = '100%';
-    deathOverlay.style.height = '100%';
-    deathOverlay.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-    deathOverlay.style.display = 'flex';
-    deathOverlay.style.justifyContent = 'center';
-    deathOverlay.style.alignItems = 'center';
-    deathOverlay.style.color = '#e74c3c';
-    deathOverlay.style.fontSize = '72px';
-    deathOverlay.style.fontWeight = 'bold';
-    deathOverlay.style.zIndex = '2000';
-    deathOverlay.textContent = 'YOU DIED';
-    
-    document.body.appendChild(deathOverlay);
-    
-    // Respawn player after a delay
-    setTimeout(() => {
-      if (document.body.contains(deathOverlay)) {
-        document.body.removeChild(deathOverlay);
-        this._respawn();
-      }
-    }, 3000);
-  }
-  
-  /**
-   * Create death particle effects
-   * @private
-   */
-  _createDeathParticles() {
     if (!this.mesh) return;
     
     // Create particles
@@ -921,7 +796,7 @@ class Player extends Entity {
     for (let i = 0; i < particleCount; i++) {
       const geometry = new THREE.SphereGeometry(0.1, 4, 4);
       const material = new THREE.MeshBasicMaterial({ 
-        color: this.stats.color,
+        color: this.stats.color || 0xff0000,
         transparent: true,
         opacity: 0.8
       });
@@ -957,34 +832,111 @@ class Player extends Entity {
     });
     
     // Animate particles
-    const startTime = Date.now();
-    const duration = 2000; // 2 seconds
-    
     const animateParticles = () => {
-      const elapsed = Date.now() - startTime;
-      const progress = Math.min(elapsed / duration, 1);
+      if (!particles.parent) return;
       
-      if (progress < 1 && particles.parent) {
-        // Update particle positions
-        particles.children.forEach(particle => {
-          const velocity = particle.userData.velocity;
-          particle.position.add(velocity);
-          
-          // Add gravity effect
-          velocity.y -= 0.002;
-          
-          // Fade out
-          if (particle.material.opacity > 0.01) {
-            particle.material.opacity -= 0.01;
-          }
-        });
+      // Update particle positions
+      particles.children.forEach(particle => {
+        const velocity = particle.userData.velocity;
+        particle.position.add(velocity);
         
-        requestAnimationFrame(animateParticles);
-      }
+        // Add gravity effect
+        velocity.y -= 0.002;
+        
+        // Fade out
+        if (particle.material.opacity > 0.01) {
+          particle.material.opacity -= 0.01;
+        }
+      });
+      
+      requestAnimationFrame(animateParticles);
     };
     
     // Start animation
-    animateParticles();
+    requestAnimationFrame(animateParticles);
+  }
+
+  /**
+   * Take damage from an attack
+   * @param {number} amount - Amount of damage to take
+   * @param {string} attackerId - ID of the attacker
+   * @returns {boolean} - Whether the damage was applied
+   */
+  takeDamage(amount, attackerId) {
+    // Skip if already dead
+    if (this.isDead) {
+      console.log('Player is already dead, ignoring damage');
+      return false;
+    }
+    
+    // Validate damage amount
+    if (typeof amount !== 'number' || amount <= 0) {
+      console.warn('Invalid damage amount:', amount);
+      return false;
+    }
+    
+    // Ensure stats object exists
+    if (!this.stats) {
+      console.warn('Player stats not initialized');
+      return false;
+    }
+    
+    // Ensure health property exists
+    if (typeof this.stats.health !== 'number') {
+      console.warn('Health stat not initialized, setting default based on class');
+      // Set default health based on class
+      switch (this.classType) {
+        case 'warrior':
+        case 'WARRIOR':
+          this.stats.health = 120;
+          break;
+        case 'ranger':
+        case 'RANGER':
+          this.stats.health = 80;
+          break;
+        case 'clerk':
+        case 'CLERK':
+          this.stats.health = 100;
+          break;
+        default:
+          this.stats.health = 100;
+      }
+    }
+    
+    // Store original health for comparison
+    const oldHealth = this.stats.health;
+    
+    // Apply damage
+    this.stats.health = Math.max(0, this.stats.health - amount);
+    
+    // Update health UI
+    this._updateHealthUI();
+    
+    // Log damage
+    console.log(`Player took ${amount} damage from ${attackerId || 'unknown'}, health: ${this.stats.health}/${oldHealth}`);
+    
+    // Notify server about health change
+    eventBus.emit('network.send', {
+      type: 'playerHealthChanged',
+      data: {
+        id: this.id,
+        health: this.stats.health,
+        attackerId: attackerId
+      }
+    });
+    
+    // Check if player died - only if health is actually zero
+    if (this.stats.health <= 0 && !this.isDead) {
+      console.log('Player health reached zero, triggering death');
+      // Call death handler with attacker ID
+      this._handleDeath(attackerId);
+      return true;
+    }
+    
+    // Play damage effect for non-fatal damage
+    this._playDamageEffect();
+    
+    return false;
   }
   
   /**
@@ -994,9 +946,48 @@ class Player extends Entity {
   _respawn() {
     console.log('RESPAWN: Player respawning...');
     
-    // Reset health and mana
+    // Reset isDead flag
+    this.isDead = false;
+    
+    // Reset death screen shown flag
+    this.deathScreenShown = false;
+    
+    // Reset health and mana with proper validation
+    if (!this.stats) {
+      console.warn('RESPAWN: Player stats not initialized, creating default stats');
+      this.stats = {
+        health: 100,
+        maxHealth: 100
+      };
+    }
+    
+    // Ensure health property exists in stats
+    if (typeof this.stats.health !== 'number' || isNaN(this.stats.health)) {
+      console.warn('RESPAWN: Health stat not initialized or invalid, setting default based on class');
+      // Set default health based on class
+      switch (this.classType) {
+        case 'warrior':
+        case 'WARRIOR':
+          this.stats.health = 120;
+          break;
+        case 'ranger':
+        case 'RANGER':
+          this.stats.health = 80;
+          break;
+        case 'clerk':
+        case 'CLERK':
+          this.stats.health = 100;
+          break;
+        default:
+          this.stats.health = 100;
+      }
+    }
+    
+    // Reset health to full
     this.health = this.stats.health;
     this.mana = this.maxMana;
+    
+    console.log(`RESPAWN: Health reset to ${this.health}/${this.stats.health}`);
     
     // Update mana UI
     this._emitManaChange();
@@ -1026,10 +1017,14 @@ class Player extends Entity {
       console.log('RESPAWN: Making player mesh visible again');
       this.mesh.visible = true;
     } else {
-      console.error('RESPAWN: Player mesh not found!');
+      console.warn('RESPAWN: Player mesh not found, recreating mesh');
       // Try to recreate mesh if it's missing
       this._createPlayerMesh();
-      this.mesh.visible = true;
+      if (this.mesh) {
+        this.mesh.visible = true;
+      } else {
+        console.error('RESPAWN: Failed to recreate player mesh!');
+      }
     }
     
     // Create respawn effect
@@ -1238,6 +1233,18 @@ class Player extends Entity {
    * @private
    */
   _updateHealthUI() {
+    // Validate health values to prevent NaN errors
+    if (typeof this.health !== 'number' || isNaN(this.health)) {
+      console.warn('Invalid health value in _updateHealthUI, resetting to 0');
+      this.health = 0;
+    }
+    
+    if (!this.stats || typeof this.stats.health !== 'number' || isNaN(this.stats.health) || this.stats.health <= 0) {
+      console.warn('Invalid max health value in _updateHealthUI, using default');
+      if (!this.stats) this.stats = {};
+      this.stats.health = 100; // Default max health
+    }
+    
     console.log(`UPDATING PLAYER UI: Health = ${this.health}/${this.stats.health}`);
     
     // Update health bar
@@ -1245,7 +1252,8 @@ class Player extends Entity {
     const playerStats = document.getElementById('player-stats');
     
     if (healthFill) {
-      const healthPercent = (this.health / this.stats.health) * 100;
+      // Calculate health percentage, ensuring it's between 0-100
+      const healthPercent = Math.max(0, Math.min(100, (this.health / this.stats.health) * 100));
       
       // Force immediate update
       healthFill.style.transition = 'none';

@@ -1289,6 +1289,49 @@ wss.on('connection', (ws) => {
         }
       }
       
+      // Handle player died notification
+      else if (data.type === 'playerDied') {
+        console.log(`Player ${clientId} died notification received`);
+        
+        // Validate data
+        if (!data.id) {
+          console.warn(`Invalid playerDied data from ${clientId}`);
+          return;
+        }
+        
+        const playerId = data.id;
+        
+        // Update player stats
+        if (players[playerId] && players[playerId].stats) {
+          players[playerId].stats.health = 0;
+          players[playerId].stats.deaths = (players[playerId].stats.deaths || 0) + 1;
+          
+          console.log(`Updated player ${playerId} health to 0 and incremented deaths`);
+        }
+        
+        // Broadcast death to all players
+        broadcastToAll({
+          type: 'playerDied',
+          id: playerId,
+          attackerId: data.attackerId || null
+        });
+        
+        // Try to update database stats
+        try {
+          if (mongoose.connection.readyState === 1 && players[playerId] && players[playerId].dbId) {
+            // Increment player's deaths
+            await Player.findByIdAndUpdate(
+              players[playerId].dbId,
+              { $inc: { 'stats.deaths': 1 } }
+            );
+            
+            console.log(`Updated database stats for player ${playerId}`);
+          }
+        } catch (dbError) {
+          console.error('Error updating player death stats in database:', dbError);
+        }
+      }
+      
       // Handle game completion (for tournament or battle royale)
       else if (data.type === 'gameComplete') {
         const { gameType, gameId, winnerId, playerResults } = data;

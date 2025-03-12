@@ -617,19 +617,120 @@ class WebSocketManager {
           break;
           
         case 'playerDied':
-          console.log('Player died:', message);
+          console.log('[NETWORK] Received playerDied message:', message);
           
-          // Notify about player death
-          eventBus.emit('network.playerDied', {
-            id: message.id,
-            attackerId: message.attackerId
-          });
+          // Emit event for entity manager
+          eventBus.emit('network.playerDied', message);
           
-          // If we are the target, show death screen
+          // Check if this is the local player
           if (message.id === this.playerId) {
-            if (window.showDeathScreen) {
-              window.showDeathScreen(message.attackerId);
+            console.log('[NETWORK] Local player died');
+            
+            // Get player reference
+            const player = window.game?.player;
+            
+            // Check if player exists
+            if (!player) {
+              console.warn('[NETWORK] Cannot handle player death: Player reference not found');
+              return;
             }
+            
+            // Check if player is already fully processed as dead (death screen shown)
+            if (player.deathScreenShown) {
+              console.log('[NETWORK] Death screen already shown for player, not showing again');
+              return;
+            }
+            
+            // Set health to 0
+            player.health = 0;
+            if (player.stats) {
+              player.stats.health = 0;
+            }
+            
+            // Update health UI
+            if (typeof player._updateHealthUI === 'function') {
+              player._updateHealthUI();
+            } else if (window.game && typeof window.game.updateHealthUI === 'function') {
+              window.game.updateHealthUI(0, player.stats?.maxHealth || 100);
+            }
+            
+            // Mark player as dead
+            player.isDead = true;
+            
+            // Show death effect
+            if (typeof player._showDeathEffect === 'function') {
+              player._showDeathEffect();
+            }
+            
+            // Show death screen via UIManager
+            console.log('[NETWORK] Showing death screen for player killed by:', message.attackerId);
+            eventBus.emit('ui.showDeathScreen', {
+              attackerId: message.attackerId
+            });
+            
+            // Mark that death screen has been shown
+            player.deathScreenShown = true;
+          } else {
+            console.log('[NETWORK] Other player died:', message.id);
+          }
+          break;
+          
+        case 'playerDeath':
+          console.log('[NETWORK] Received playerDeath message:', message);
+          
+          // Emit event for entity manager
+          eventBus.emit('network.playerDied', message);
+          
+          // Check if this is the local player
+          if (message.id === this.playerId) {
+            console.log('[NETWORK] Local player died (playerDeath message)');
+            
+            // Get player reference
+            const player = window.game?.player;
+            
+            // Check if player exists
+            if (!player) {
+              console.warn('[NETWORK] Cannot handle player death: Player reference not found');
+              return;
+            }
+            
+            // Check if player is already fully processed as dead (death screen shown)
+            if (player.deathScreenShown) {
+              console.log('[NETWORK] Death screen already shown for player, not showing again');
+              return;
+            }
+            
+            // Set health to 0
+            player.health = 0;
+            if (player.stats) {
+              player.stats.health = 0;
+            }
+            
+            // Update health UI
+            if (typeof player._updateHealthUI === 'function') {
+              player._updateHealthUI();
+            } else if (window.game && typeof window.game.updateHealthUI === 'function') {
+              window.game.updateHealthUI(0, player.stats?.maxHealth || 100);
+            }
+            
+            // Mark player as dead
+            player.isDead = true;
+            
+            // Show death effect
+            if (typeof player._showDeathEffect === 'function') {
+              player._showDeathEffect();
+            }
+            
+            // Show death screen via UIManager
+            console.log('[NETWORK] Showing death screen for player killed by:', message.attackerId);
+            eventBus.emit('ui.showDeathScreen', {
+              attackerId: message.attackerId
+            });
+            
+            // Mark that death screen has been shown
+            player.deathScreenShown = true;
+          } else {
+            console.log('[NETWORK] Other player died:', message.id);
           }
           break;
           
@@ -648,6 +749,24 @@ class WebSocketManager {
             position: message.position,
             health: message.health,
             maxHealth: message.maxHealth
+          });
+          break;
+          
+        case 'playerRespawn':
+          console.log('[NETWORK] Received playerRespawn message:', message);
+          
+          // Update stored position and health
+          if (message.id && this.otherPlayers[message.id]) {
+            this.otherPlayers[message.id].position = message.position;
+            this.otherPlayers[message.id].health = message.health;
+          }
+          
+          // Notify about player respawn
+          eventBus.emit('network.playerRespawned', {
+            id: message.id,
+            position: message.position,
+            health: message.health,
+            maxHealth: message.maxHealth || 100 // Provide default maxHealth
           });
           break;
           
@@ -1049,7 +1168,8 @@ class WebSocketManager {
   
   /**
    * Join a tournament
-   * @param {string} tournamentId - Tournament ID
+   * @param {string} tournamentId - ID of the tournament to join
+   * @returns {boolean} - Whether the join request was sent
    */
   joinTournament(tournamentId) {
     if (!this.connected || !this.socket) {
@@ -1061,6 +1181,7 @@ class WebSocketManager {
     
     // Set current tournament ID
     this._currentTournament = { id: tournamentId };
+    this.gameMode = 'tournament';
     
     // Send join tournament message
     this.sendMessage({
@@ -1077,12 +1198,20 @@ class WebSocketManager {
       console.log('[NETWORK] Requesting existing players with tournament ID');
       this.sendMessage({
         type: 'getExistingPlayers',
-        tournamentId: tournamentId
+        data: {
+          gameMode: 'tournament',
+          tournamentId: tournamentId
+        }
       });
       
-      // Finally, request all existing players as a fallback
-      console.log('[NETWORK] Requesting all existing players as fallback');
-      this.getExistingPlayers();
+      // Force update player positions to ensure all players are visible
+      this.forceUpdatePlayerPositions();
+      
+      // Schedule another update after a longer delay to catch any late-joining players
+      setTimeout(() => {
+        console.log('[NETWORK] Performing second update of player positions');
+        this.forceUpdatePlayerPositions();
+      }, 3000);
     }, 1000);
     
     return true;
@@ -1549,7 +1678,18 @@ class WebSocketManager {
   }
   
   /**
-   * Make this method available globally for console debugging
+   * Initialize the WebSocket connection
+   */
+  init() {
+    console.log('Initializing WebSocketManager');
+    this._setupSocket();
+    
+    // Expose debug methods to window
+    this._exposeDebugMethods();
+  }
+  
+  /**
+   * Expose debug methods to window object
    * @private
    */
   _exposeDebugMethods() {
@@ -1562,6 +1702,7 @@ class WebSocketManager {
       window.debugNetwork = this.debugConnection.bind(this);
       window.debugPlayerVisibility = this.debugPlayerVisibility.bind(this);
       window.forceTournamentPlayersRefresh = this.forceTournamentPlayersRefresh.bind(this);
+      window.forceUpdatePlayerPositions = this.forceUpdatePlayerPositions.bind(this);
       
       console.log('[NETWORK DEBUG] Debug methods exposed to window object');
     }
@@ -1600,6 +1741,45 @@ class WebSocketManager {
     this.forceGetExistingPlayers();
     
     return 'Player visibility debug complete. Check console for details.';
+  }
+  
+  /**
+   * Force update of player positions
+   * Requests the latest positions of all players from the server
+   * @returns {boolean} - Whether the request was sent
+   */
+  forceUpdatePlayerPositions() {
+    console.log('Forcing update of player positions');
+    
+    if (!this.connected || !this.socket) {
+      console.warn('Cannot force update player positions: Not connected');
+      return false;
+    }
+    
+    // Request existing players to get their positions
+    this.socket.emit('message', {
+      type: 'getExistingPlayers',
+      data: {
+        gameMode: this.gameMode,
+        tournamentId: this.currentTournament
+      }
+    });
+    
+    console.log('Sent getExistingPlayers request to update player positions');
+    
+    // If in tournament mode, also request tournament players
+    if (this.gameMode === 'tournament' && this.currentTournament) {
+      this.socket.emit('message', {
+        type: 'getTournamentPlayers',
+        data: {
+          tournamentId: this.currentTournament
+        }
+      });
+      
+      console.log('Sent getTournamentPlayers request to update tournament player positions');
+    }
+    
+    return true;
   }
 }
 

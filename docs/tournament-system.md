@@ -281,3 +281,74 @@ const TournamentSchema = new mongoose.Schema({
 6. Provide clear visual feedback for tournament actions
 7. Implement proper logging for debugging
 8. Handle edge cases like disconnections and reconnections
+
+## Recent Improvements
+
+### Tournament Player Visibility Enhancement
+
+The tournament system has been enhanced to improve player visibility when joining tournaments. The following improvements have been implemented:
+
+#### Enhanced `joinTournament` Method
+
+The `joinTournament` method in WebSocketManager.js has been updated to include the following enhancements:
+
+```javascript
+joinTournament(tournamentId) {
+  // Check if WebSocket is connected
+  if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+    console.error('[NETWORK] Cannot join tournament: WebSocket not connected');
+    return;
+  }
+
+  console.log(`[NETWORK] Joining tournament: ${tournamentId}`);
+
+  // Set current tournament ID
+  this._currentTournament = { id: tournamentId };
+
+  // Set game mode to tournament
+  window.game.gameMode = 'tournament';
+
+  // Send join tournament message
+  this.sendMessage({
+    type: 'joinTournament',
+    tournamentId: tournamentId
+  });
+
+  // Request tournament players after a short delay to ensure server has processed join
+  setTimeout(() => {
+    this.requestTournamentPlayers(tournamentId);
+
+    // Also request existing players with tournament ID
+    this.sendMessage({
+      type: 'getExistingPlayers',
+      tournamentId: tournamentId
+    });
+
+    // Force update player positions to ensure all players are visible
+    this.forceUpdatePlayerPositions();
+  }, 500);
+
+  // Schedule a second update of player positions after a longer delay
+  // to catch any late-joining players
+  setTimeout(() => {
+    this.forceUpdatePlayerPositions();
+  }, 2000);
+}
+```
+
+#### Key Improvements
+
+1. **Game Mode Setting**: Automatically sets the game mode to 'tournament' when joining a tournament.
+2. **Tournament Player Request**: Requests tournament players after a short delay to ensure the server has processed the join request.
+3. **Existing Player Request**: Sends a message to request existing players with the tournament ID.
+4. **Force Position Updates**: Calls `forceUpdatePlayerPositions()` to ensure all players are visible.
+5. **Delayed Position Update**: Schedules a second update of player positions after a longer delay to catch any late-joining players.
+
+#### Benefits
+
+- More reliable player visibility in tournament mode
+- Improved synchronization of player positions when joining tournaments
+- Better player experience with automatic updates of player positions
+- Reduced likelihood of invisible players in tournament mode
+
+These improvements ensure that players can see all other participants in the tournament, enhancing the multiplayer experience and reducing confusion caused by invisible players.
