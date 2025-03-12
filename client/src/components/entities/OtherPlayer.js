@@ -179,6 +179,8 @@ class OtherPlayer extends Entity {
    */
   _createPlayerMesh() {
     console.log(`[OTHER_PLAYER] Creating mesh for player ${this.id} with class ${this.classType}`);
+    console.log(`[OTHER_PLAYER DEBUG] Current game mode: ${window.game?.gameMode}`);
+    console.log(`[OTHER_PLAYER DEBUG] Current tournament: ${window.webSocketManager?._currentTournament?.id}`);
     
     // Create player mesh (box for now)
     const geometry = new THREE.BoxGeometry(0.8, 1.6, 0.8);
@@ -193,16 +195,38 @@ class OtherPlayer extends Entity {
       console.log(`[OTHER_PLAYER] Mesh created successfully for player ${this.id}`);
       this.mesh.visible = true;
       
-      // Verify the mesh is in the scene
+      // Immediately try to add to scene via renderer if not already in scene
+      if (!this.mesh.parent) {
+        console.log(`[OTHER_PLAYER] Mesh for player ${this.id} is not in scene, adding now`);
+        
+        // Try to add via renderer
+        if (window.renderer) {
+          window.renderer.addObject(`player-${this.id}`, this.mesh);
+          console.log(`[OTHER_PLAYER] Added mesh for player ${this.id} to scene via window.renderer`);
+        } else if (window.game?.renderer) {
+          window.game.renderer.addObject(`player-${this.id}`, this.mesh);
+          console.log(`[OTHER_PLAYER] Added mesh for player ${this.id} to scene via window.game.renderer`);
+        } else {
+          console.warn(`[OTHER_PLAYER] Could not find renderer to add mesh for player ${this.id}`);
+        }
+      }
+      
+      // Verify the mesh is in the scene after a short delay
       setTimeout(() => {
         if (this.mesh.parent) {
           console.log(`[OTHER_PLAYER] Mesh for player ${this.id} is in the scene`);
         } else {
-          console.warn(`[OTHER_PLAYER] Mesh for player ${this.id} is NOT in the scene!`);
+          console.warn(`[OTHER_PLAYER] Mesh for player ${this.id} is STILL NOT in the scene!`);
           
           // Try to add it to the scene if we have access to the renderer
-          if (window.game && window.game.renderer && window.game.renderer.scene) {
-            console.log(`[OTHER_PLAYER] Attempting to add mesh for player ${this.id} to scene`);
+          if (window.renderer) {
+            console.log(`[OTHER_PLAYER] Attempting to add mesh for player ${this.id} to scene via window.renderer`);
+            window.renderer.addObject(`player-${this.id}`, this.mesh);
+          } else if (window.game && window.game.renderer) {
+            console.log(`[OTHER_PLAYER] Attempting to add mesh for player ${this.id} to scene via window.game.renderer`);
+            window.game.renderer.addObject(`player-${this.id}`, this.mesh);
+          } else if (window.game && window.game.renderer && window.game.renderer.scene) {
+            console.log(`[OTHER_PLAYER] Attempting to add mesh for player ${this.id} directly to scene`);
             window.game.renderer.scene.add(this.mesh);
           }
         }

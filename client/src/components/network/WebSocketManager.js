@@ -35,6 +35,71 @@ class WebSocketManager {
     this.handleMessage = this.handleMessage.bind(this);
     this.sendMessage = this.sendMessage.bind(this);
     this.disconnect = this.disconnect.bind(this);
+    this.registerMessageHandler = this.registerMessageHandler.bind(this);
+    this.unregisterMessageHandler = this.unregisterMessageHandler.bind(this);
+    
+    // Expose debug methods
+    this._exposeDebugMethods();
+  }
+  
+  /**
+   * Register a handler for a specific message type
+   * @param {string} messageType - The type of message to handle
+   * @param {Function} callback - The callback function to execute when message is received
+   * @returns {boolean} - Success status
+   */
+  registerMessageHandler(messageType, callback) {
+    if (!messageType || typeof callback !== 'function') {
+      console.error('[NETWORK] Invalid message handler registration:', messageType);
+      return false;
+    }
+    
+    console.log(`[NETWORK] Registering handler for message type: ${messageType}`);
+    
+    // Initialize array for this message type if it doesn't exist
+    if (!this.messageHandlers[messageType]) {
+      this.messageHandlers[messageType] = [];
+    }
+    
+    // Add the callback to the handlers for this message type
+    this.messageHandlers[messageType].push(callback);
+    
+    return true;
+  }
+  
+  /**
+   * Unregister a handler for a specific message type
+   * @param {string} messageType - The type of message to handle
+   * @param {Function} callback - The callback function to remove
+   * @returns {boolean} - Success status
+   */
+  unregisterMessageHandler(messageType, callback) {
+    // Check if we have handlers for this message type
+    if (!this.messageHandlers[messageType] || !this.messageHandlers[messageType].length) {
+      console.warn(`[NETWORK] No handlers registered for message type: ${messageType}`);
+      return false;
+    }
+    
+    // If callback is provided, remove only that specific callback
+    if (callback && typeof callback === 'function') {
+      const initialLength = this.messageHandlers[messageType].length;
+      this.messageHandlers[messageType] = this.messageHandlers[messageType].filter(
+        handler => handler !== callback
+      );
+      
+      const removed = initialLength - this.messageHandlers[messageType].length;
+      console.log(`[NETWORK] Removed ${removed} handler(s) for message type: ${messageType}`);
+      
+      return removed > 0;
+    } 
+    // If no callback provided, remove all handlers for this message type
+    else {
+      const count = this.messageHandlers[messageType].length;
+      this.messageHandlers[messageType] = [];
+      
+      console.log(`[NETWORK] Removed all ${count} handler(s) for message type: ${messageType}`);
+      return true;
+    }
   }
   
   /**
@@ -164,7 +229,23 @@ class WebSocketManager {
         return;
       }
       
-      // Handle different message types
+      // Log message (except for high-frequency messages)
+      if (message.type !== 'ping' && message.type !== 'pong') {
+        console.log('[NETWORK] Received message:', message);
+      }
+      
+      // Check for registered handler
+      if (this.messageHandlers[message.type]) {
+        this.messageHandlers[message.type].forEach(handler => {
+          try {
+            handler(message);
+          } catch (handlerError) {
+            console.error(`[NETWORK] Error in handler for ${message.type}:`, handlerError);
+          }
+        });
+      }
+      
+      // Handle message based on type
       switch (message.type) {
         case 'id':
           console.log('[NETWORK] Assigned ID:', message.id);
@@ -192,33 +273,21 @@ class WebSocketManager {
           console.log('[NETWORK] Received existing players:', message.players);
           console.log('[NETWORK DEBUG] Current game mode:', window.game?.gameMode);
           console.log('[NETWORK DEBUG] Current tournament ID:', this._currentTournament?.id);
-          console.log('[NETWORK DEBUG] Message tournament ID:', message.tournamentId);
           
           // Validate players array
-          if (!Array.isArray(message.players)) {
+          if (!message.players || !Array.isArray(message.players)) {
             console.warn('[NETWORK] Invalid existing players data:', message);
-            return;
+            break;
           }
           
-          // Clear other players first to prevent duplicates
+          // Clear existing players to prevent duplicates
           this.otherPlayers = {};
           
-          // Tournament-specific logging
-          if (window.game?.gameMode === 'tournament' || message.tournamentId) {
-            console.log('[NETWORK] Tournament mode detected for existing players');
-            console.log('[NETWORK] Tournament ID in message:', message.tournamentId);
-            console.log('[NETWORK] Current tournament:', this._currentTournament?.id);
-            console.log('[NETWORK] Player count in message:', message.players.length);
-          }
-          
-          // Track processed players for logging
-          const processedPlayers = [];
-          
-          // Process each player separately
+          // Process each player
           message.players.forEach(player => {
-            // Skip if player has no ID
+            // Skip if no ID
             if (!player.id) {
-              console.warn('[NETWORK] Player data missing ID, skipping:', player);
+              console.warn('[NETWORK] Player has no ID:', player);
               return;
             }
             
@@ -227,8 +296,6 @@ class WebSocketManager {
               console.log(`[NETWORK] Skipping own player in existing players: ${player.id}`);
               return;
             }
-            
-            console.log(`[NETWORK] Processing existing player: ${player.id}`);
             
             // Ensure player has position data
             if (!player.position) {
@@ -251,34 +318,7 @@ class WebSocketManager {
             if (!player.stats) {
               // Default stats based on class
               const classType = player.class || 'WARRIOR';
-              const defaultStats = {
-                'CLERK': {
-                  id: 'CLERK',
-                  name: 'Clerk',
-                  color: 0x428CD5,
-                  health: 80,
-                  speed: 0.15,
-                  description: 'High speed, lower health. Uses magic attacks.'
-                },
-                'WARRIOR': {
-                  id: 'WARRIOR',
-                  name: 'Warrior',
-                  color: 0xD54242,
-                  health: 120,
-                  speed: 0.1,
-                  description: 'High health, lower speed. Uses melee attacks.'
-                },
-                'RANGER': {
-                  id: 'RANGER',
-                  name: 'Ranger',
-                  color: 0x42D54C,
-                  health: 100,
-                  speed: 0.125,
-                  description: 'Balanced health and speed. Uses ranged attacks.'
-                }
-              };
-              
-              player.stats = defaultStats[classType] || defaultStats['WARRIOR'];
+              player.stats = this._getDefaultStatsForClass(classType);
               console.log(`[NETWORK] Added default stats for player ${player.id} based on class ${classType}`);
             }
             
@@ -288,131 +328,134 @@ class WebSocketManager {
               console.log(`[NETWORK] Added health data for player ${player.id}: ${player.health}`);
             }
             
-            // Store other player data
+            // Store player data
             this.otherPlayers[player.id] = player;
-            processedPlayers.push(player.id);
           });
           
-          // Log the processed players
-          console.log(`[NETWORK] Processed ${processedPlayers.length} existing players: ${processedPlayers.join(', ')}`);
+          console.log('[NETWORK] Processed existing players:', Object.keys(this.otherPlayers));
           
           // Emit event for entity manager to create the players
-          console.log('[NETWORK] Emitting network.existingPlayers event with:', Object.values(this.otherPlayers));
-          eventBus.emit('network.existingPlayers', Object.values(this.otherPlayers));
+          eventBus.emit('network.existingPlayers', {
+            players: Object.values(this.otherPlayers)
+          });
+          
+          // Force refresh player meshes after a short delay if in tournament mode
+          if (window.game?.gameMode === 'tournament') {
+            console.log('[NETWORK] Scheduling player mesh refresh for tournament mode');
+            
+            setTimeout(() => {
+              console.log('[NETWORK] Forcing refresh of player meshes after receiving tournament player data');
+              
+              // Try to use the entity manager's refresh method
+              if (window.entityManager && window.entityManager.forceRefreshPlayerMeshes) {
+                const count = window.entityManager.forceRefreshPlayerMeshes();
+                console.log(`[NETWORK] Refreshed ${count} player meshes via EntityManager`);
+              } 
+              // Fallback to global function if available
+              else if (window.forceRefreshPlayerMeshes) {
+                const count = window.forceRefreshPlayerMeshes();
+                console.log(`[NETWORK] Refreshed ${count} player meshes via global function`);
+              }
+            }, 1000); // Wait for entities to be created
+          }
+          
           break;
           
         case 'playerJoined':
-          // Check which format the message is in - either direct properties or nested in player object
-          let playerData;
+          // Extract player data from the message
+          // The server sends player data directly in the message, not in a player property
+          const playerData = {
+            id: message.id,
+            username: message.username,
+            characterClass: message.characterClass,
+            class: message.characterClass, // Ensure both formats are available
+            position: message.position || { x: 0, y: 0.8, z: 0 },
+            stats: message.stats || this._getDefaultStatsForClass(message.characterClass || 'WARRIOR'),
+            health: message.health || (message.stats ? message.stats.health : null)
+          };
           
-          // Log tournament-specific information
-          console.log('[NETWORK DEBUG] Player joined - Current game mode:', window.game?.gameMode);
-          console.log('[NETWORK DEBUG] Player joined - Current tournament ID:', this._currentTournament?.id);
-          console.log('[NETWORK DEBUG] Player joined - Message tournament ID:', message.tournamentId);
+          console.log('[NETWORK] Player joined:', playerData);
           
-          if (message.player && message.player.id) {
-            // Format: {type: 'playerJoined', player: {id: '...', ...}}
-            console.log('[NETWORK] Player joined (player object format):', message.player);
-            playerData = message.player;
-            
-            // Check for tournament ID in the message
-            if (message.tournamentId && !playerData.tournamentId) {
-              playerData.tournamentId = message.tournamentId;
-              console.log('[NETWORK] Added tournament ID to player data:', message.tournamentId);
-            }
-          } else if (message.id) {
-            // Format: {type: 'playerJoined', id: '...', ...}
-            console.log('[NETWORK] Player joined (direct properties format):', message.id);
-            playerData = {
-              id: message.id,
-              username: message.username || `Player_${message.id.substring(0, 6)}`,
-              characterClass: message.characterClass || message.class || 'WARRIOR',
-              class: message.class || message.characterClass || 'WARRIOR',
-              position: message.position || { x: 0, y: 0.8, z: 0 },
-              stats: message.stats || null,
-              health: message.health || null,
-              tournamentId: message.tournamentId || this._currentTournament?.id
-            };
-            
-            if (playerData.tournamentId) {
-              console.log('[NETWORK] Set tournament ID in player data:', playerData.tournamentId);
-            }
-          } else {
-            // Invalid format - no id found
-            console.warn('[NETWORK] Received invalid player joined data (no ID):', message);
-            return;
+          // Skip if no player ID
+          if (!playerData.id) {
+            console.warn('[NETWORK] Invalid player joined message - missing ID:', message);
+            break;
           }
           
           // Skip if this is our own player
           if (playerData.id === this.playerId) {
-            console.log('[NETWORK] Skipping own player join event');
-            return;
+            console.log(`[NETWORK] Skipping own player join event: ${playerData.id}`);
+            break;
           }
           
-          // Ensure player has position data
-          if (!playerData.position) {
-            playerData.position = { x: 0, y: 0.8, z: 0 };
-            console.log(`[NETWORK] Added default position for joined player ${playerData.id}`);
-          }
-          
-          // Ensure player has class data
-          if (!playerData.class && playerData.characterClass) {
-            playerData.class = playerData.characterClass;
-          } else if (!playerData.characterClass && playerData.class) {
-            playerData.characterClass = playerData.class;
-          } else if (!playerData.class && !playerData.characterClass) {
-            playerData.class = 'WARRIOR';
-            playerData.characterClass = 'WARRIOR';
-            console.log(`[NETWORK] Added default class for joined player ${playerData.id}`);
-          }
-          
-          // Ensure player has stats data
-          if (!playerData.stats) {
-            // Default stats based on class
-            const classType = playerData.class || 'WARRIOR';
-            const defaultStats = {
-              'CLERK': {
-                id: 'CLERK',
-                name: 'Clerk',
-                color: 0x428CD5,
-                health: 80,
-                speed: 0.15,
-                description: 'High speed, lower health. Uses magic attacks.'
-              },
-              'WARRIOR': {
-                id: 'WARRIOR',
-                name: 'Warrior',
-                color: 0xD54242,
-                health: 120,
-                speed: 0.1,
-                description: 'High health, lower speed. Uses melee attacks.'
-              },
-              'RANGER': {
-                id: 'RANGER',
-                name: 'Ranger',
-                color: 0x42D54C,
-                health: 100,
-                speed: 0.125,
-                description: 'Balanced health and speed. Uses ranged attacks.'
-              }
-            };
-            
-            playerData.stats = defaultStats[classType] || defaultStats['WARRIOR'];
-            console.log(`[NETWORK] Added default stats for joined player ${playerData.id} based on class ${classType}`);
-          }
-          
-          // Ensure player has health data
-          if (playerData.stats && !playerData.health) {
+          // Ensure player has health data if not provided
+          if (!playerData.health && playerData.stats) {
             playerData.health = playerData.stats.health;
-            console.log(`[NETWORK] Added health data for joined player ${playerData.id}: ${playerData.health}`);
+            console.log(`[NETWORK] Added health data for player ${playerData.id}: ${playerData.health}`);
           }
           
           // Store player data
           this.otherPlayers[playerData.id] = playerData;
           
-          // Emit event for entity manager
+          // Emit event for entity manager to create the player
           console.log(`[NETWORK] Emitting player joined event for ${playerData.id}`);
           eventBus.emit('network.playerJoined', playerData);
+          
+          // In tournament mode, ensure player mesh is added to scene after a short delay
+          if (window.game?.gameMode === 'tournament') {
+            console.log('[NETWORK] Tournament mode detected, ensuring player mesh is added to scene');
+            
+            setTimeout(() => {
+              try {
+                // Try to find the player entity
+                if (window.entityManager) {
+                  const entity = window.entityManager.getEntity(playerData.id);
+                  
+                  if (entity) {
+                    console.log(`[NETWORK] Found entity for player ${playerData.id}, checking mesh`);
+                    
+                    // Check if mesh exists and is in scene
+                    if (entity.mesh) {
+                      const objectId = `player-${entity.id}`;
+                      const isInScene = window.renderer.getObject(objectId);
+                      
+                      if (!isInScene) {
+                        console.log(`[NETWORK] Adding mesh for player ${entity.id} to scene`);
+                        window.renderer.addObject(objectId, entity.mesh);
+                      }
+                      
+                      // Ensure mesh is visible
+                      entity.mesh.visible = true;
+                      console.log(`[NETWORK] Ensured player ${entity.id} is visible`);
+                    } else {
+                      console.warn(`[NETWORK] Player ${entity.id} has no mesh, attempting to recreate`);
+                      
+                      // Try to recreate mesh if player has the method
+                      if (entity._createPlayerMesh) {
+                        entity._createPlayerMesh();
+                        
+                        if (entity.mesh) {
+                          console.log(`[NETWORK] Created mesh for player ${entity.id}, adding to scene`);
+                          window.renderer.addObject(`player-${entity.id}`, entity.mesh);
+                          entity.mesh.visible = true;
+                        }
+                      }
+                    }
+                  } else {
+                    console.log(`[NETWORK] Entity not found for player ${playerData.id}, forcing refresh`);
+                    
+                    // Force refresh all player meshes as a fallback
+                    if (window.forceRefreshPlayerMeshes) {
+                      window.forceRefreshPlayerMeshes();
+                    }
+                  }
+                }
+              } catch (error) {
+                console.error('[NETWORK] Error ensuring player mesh visibility:', error);
+              }
+            }, 500);
+          }
+          
           break;
           
         case 'playerLeft':
@@ -638,6 +681,19 @@ class WebSocketManager {
           
           // Emit tournament joined event
           eventBus.emit('tournament.joined', message);
+          
+          // Request tournament players to ensure visibility
+          if (message.tournament && message.tournament.id) {
+            console.log('[NETWORK] Automatically requesting tournament players after joining');
+            
+            // Wait a short delay to ensure server has processed the join
+            setTimeout(() => {
+              this.requestTournamentPlayers(message.tournament.id);
+              
+              // Also request existing players as a fallback
+              this.forceGetExistingPlayers();
+            }, 500);
+          }
           break;
           
         case 'tournamentPlayerCount':
@@ -792,17 +848,6 @@ class WebSocketManager {
           eventBus.emit('network.battleRoyaleJoined', message.battleRoyale);
           break;
       }
-      
-      // Call registered handlers for this message type
-      if (this.messageHandlers[message.type]) {
-        this.messageHandlers[message.type].forEach(handler => {
-          try {
-            handler(message);
-          } catch (error) {
-            console.error(`[NETWORK] Error in handler for ${message.type}:`, error);
-          }
-        });
-      }
     } catch (error) {
       console.error('[NETWORK] Error handling message:', error);
     }
@@ -911,34 +956,7 @@ class WebSocketManager {
     if (!this.playerData.stats) {
       // Default stats based on class
       const classType = this.playerData.class || 'WARRIOR';
-      const defaultStats = {
-        'CLERK': {
-          id: 'CLERK',
-          name: 'Clerk',
-          color: 0x428CD5,
-          health: 80,
-          speed: 0.15,
-          description: 'High speed, lower health. Uses magic attacks.'
-        },
-        'WARRIOR': {
-          id: 'WARRIOR',
-          name: 'Warrior',
-          color: 0xD54242,
-          health: 120,
-          speed: 0.1,
-          description: 'High health, lower speed. Uses melee attacks.'
-        },
-        'RANGER': {
-          id: 'RANGER',
-          name: 'Ranger',
-          color: 0x42D54C,
-          health: 100,
-          speed: 0.125,
-          description: 'Balanced health and speed. Uses ranged attacks.'
-        }
-      };
-      
-      this.playerData.stats = defaultStats[classType] || defaultStats['WARRIOR'];
+      this.playerData.stats = this._getDefaultStatsForClass(classType);
       console.log(`[NETWORK] Added default stats for player based on class ${classType}`);
     }
     
@@ -990,6 +1008,179 @@ class WebSocketManager {
       // If we couldn't send the join message now, store the player data for later
       this.pendingPlayerData = this.playerData;
     }
+  }
+  
+  /**
+   * Get default stats for a character class
+   * @param {string} classType - The character class
+   * @returns {Object} - The default stats
+   * @private
+   */
+  _getDefaultStatsForClass(classType) {
+    const defaultStats = {
+      'CLERK': {
+        id: 'CLERK',
+        name: 'Clerk',
+        color: 0x428CD5,
+        health: 80,
+        speed: 0.15,
+        description: 'High speed, lower health. Uses magic attacks.'
+      },
+      'WARRIOR': {
+        id: 'WARRIOR',
+        name: 'Warrior',
+        color: 0xD54242,
+        health: 120,
+        speed: 0.1,
+        description: 'High health, lower speed. Uses melee attacks.'
+      },
+      'RANGER': {
+        id: 'RANGER',
+        name: 'Ranger',
+        color: 0x42D54C,
+        health: 100,
+        speed: 0.125,
+        description: 'Balanced health and speed. Uses ranged attacks.'
+      }
+    };
+    
+    return defaultStats[classType] || defaultStats['WARRIOR'];
+  }
+  
+  /**
+   * Join a tournament
+   * @param {string} tournamentId - Tournament ID
+   */
+  joinTournament(tournamentId) {
+    if (!this.connected || !this.socket) {
+      console.error('[NETWORK] Cannot join tournament: Not connected to server');
+      return false;
+    }
+    
+    console.log(`[NETWORK] Joining tournament: ${tournamentId}`);
+    
+    // Set current tournament ID
+    this._currentTournament = { id: tournamentId };
+    
+    // Send join tournament message
+    this.sendMessage({
+      type: 'joinTournament',
+      tournamentId
+    });
+    
+    // Request tournament players after a short delay to ensure server has processed the join
+    setTimeout(() => {
+      console.log('[NETWORK] Requesting tournament players after joining tournament');
+      this.requestTournamentPlayers(tournamentId);
+      
+      // Also request existing players with tournament ID
+      console.log('[NETWORK] Requesting existing players with tournament ID');
+      this.sendMessage({
+        type: 'getExistingPlayers',
+        tournamentId: tournamentId
+      });
+      
+      // Finally, request all existing players as a fallback
+      console.log('[NETWORK] Requesting all existing players as fallback');
+      this.getExistingPlayers();
+    }, 1000);
+    
+    return true;
+  }
+  
+  /**
+   * Get existing players
+   */
+  getExistingPlayers() {
+    if (!this.connected || !this.socket) {
+      console.error('[NETWORK] Cannot get existing players: Not connected to server');
+      return false;
+    }
+    
+    console.log('[NETWORK] Requesting existing players');
+    console.log('[NETWORK DEBUG] Current game mode:', window.game?.gameMode);
+    console.log('[NETWORK DEBUG] Current tournament ID:', this._currentTournament?.id);
+    
+    const getExistingPlayersMsg = {
+      type: 'getExistingPlayers'
+    };
+    
+    // If in a tournament, include the tournament ID
+    if (this._currentTournament && this._currentTournament.id) {
+      getExistingPlayersMsg.tournamentId = this._currentTournament.id;
+      console.log(`[NETWORK DEBUG] Including tournament ID in request: ${this._currentTournament.id}`);
+    }
+    
+    const requestSent = this.sendMessage(getExistingPlayersMsg);
+    console.log('[NETWORK DEBUG] getExistingPlayers request sent:', requestSent);
+    
+    return requestSent;
+  }
+  
+  /**
+   * Force a request for existing players
+   * This can be called from the console to try to fix visibility issues
+   * Usage: window.webSocketManager.forceGetExistingPlayers()
+   */
+  forceGetExistingPlayers() {
+    console.log('[NETWORK] Forcing request for existing players');
+    console.log('[NETWORK] Current player ID:', this.playerId);
+    console.log('[NETWORK] Current game mode:', window.game?.gameMode);
+    console.log('[NETWORK] Current tournament:', this._currentTournament);
+    
+    // Create request message
+    const getExistingPlayersMsg = {
+      type: 'getExistingPlayers'
+    };
+    
+    // If in a tournament, include the tournament ID
+    if (this._currentTournament && this._currentTournament.id) {
+      getExistingPlayersMsg.tournamentId = this._currentTournament.id;
+      console.log(`[NETWORK] Including tournament ID in request: ${this._currentTournament.id}`);
+    }
+    
+    // Send the request
+    const requestSent = this.sendMessage(getExistingPlayersMsg);
+    console.log('[NETWORK] Force getExistingPlayers request sent:', requestSent);
+    
+    // Also try to clear and re-initialize other players
+    console.log('[NETWORK] Clearing other players cache to force refresh');
+    this.otherPlayers = {};
+    
+    return requestSent;
+  }
+  
+  /**
+   * Show notification message
+   * @param {string} message - The message to show
+   * @private
+   */
+  _showNotification(message) {
+    // Try to find or create notification element
+    let notificationEl = document.getElementById('game-notifications');
+    
+    if (!notificationEl) {
+      notificationEl = document.createElement('div');
+      notificationEl.id = 'game-notifications';
+      notificationEl.style.position = 'absolute';
+      notificationEl.style.bottom = '10%';
+      notificationEl.style.left = '50%';
+      notificationEl.style.transform = 'translateX(-50%)';
+      notificationEl.style.color = '#ff3300';
+      notificationEl.style.fontWeight = 'bold';
+      notificationEl.style.textShadow = '1px 1px 2px black';
+      notificationEl.style.fontSize = '18px';
+      notificationEl.style.zIndex = '1000';
+      document.body.appendChild(notificationEl);
+    }
+    
+    // Show message
+    notificationEl.textContent = message;
+    
+    // Clear after 3 seconds
+    setTimeout(() => {
+      notificationEl.textContent = '';
+    }, 3000);
   }
   
   /**
@@ -1074,39 +1265,6 @@ class WebSocketManager {
     } catch (error) {
       console.error('[NETWORK] Error sending attack:', error);
     }
-  }
-  
-  /**
-   * Show notification message
-   * @param {string} message - The message to show
-   * @private
-   */
-  _showNotification(message) {
-    // Try to find or create notification element
-    let notificationEl = document.getElementById('game-notifications');
-    
-    if (!notificationEl) {
-      notificationEl = document.createElement('div');
-      notificationEl.id = 'game-notifications';
-      notificationEl.style.position = 'absolute';
-      notificationEl.style.bottom = '10%';
-      notificationEl.style.left = '50%';
-      notificationEl.style.transform = 'translateX(-50%)';
-      notificationEl.style.color = '#ff3300';
-      notificationEl.style.fontWeight = 'bold';
-      notificationEl.style.textShadow = '1px 1px 2px black';
-      notificationEl.style.fontSize = '18px';
-      notificationEl.style.zIndex = '1000';
-      document.body.appendChild(notificationEl);
-    }
-    
-    // Show message
-    notificationEl.textContent = message;
-    
-    // Clear after 3 seconds
-    setTimeout(() => {
-      notificationEl.textContent = '';
-    }, 3000);
   }
   
   /**
@@ -1306,301 +1464,145 @@ class WebSocketManager {
   }
   
   /**
-   * Join an existing tournament
+   * Request tournament players
+   * This is called automatically when joining a tournament
    * @param {string} tournamentId - Tournament ID
-   * @returns {boolean} - Success status
+   * @returns {boolean} - Whether the request was sent
    */
-  joinTournament(tournamentId) {
+  requestTournamentPlayers(tournamentId) {
     if (!this.connected || !this.socket) {
-      console.error('Cannot join tournament: Not connected to server');
+      console.error('[NETWORK] Cannot request tournament players: Not connected to server');
       return false;
     }
     
-    console.log('Joining tournament:', tournamentId);
-    
-    // Make sure player has joined the game
-    if (!this.playerId) {
-      console.warn('Player ID not set, joining game first');
-      // If we have player data, use it, otherwise use a default
-      const playerData = this.playerData || {
-        username: `Player_${Date.now().toString().slice(-6)}`,
-        characterClass: 'clerk' // Default class if none selected
-      };
-      
-      // Join the game first
-      this.sendMessage({
-        type: 'join',
-        playerData: playerData
-      });
-      
-      // Store player data for later use
-      this.playerData = playerData;
-    }
-    
-    // Send join tournament message
-    const success = this.sendMessage({
-      type: 'joinTournament',
-      tournamentId
-    });
-    
-    if (success) {
-      console.log('Tournament join message sent successfully');
-    } else {
-      console.error('Failed to send tournament join message');
-    }
-    
-    return success;
-  }
-  
-  /**
-   * Start a tournament (creator only)
-   * @param {string} tournamentId - Tournament ID
-   */
-  startTournament(tournamentId) {
-    if (!this.connected || !this.socket) {
-      console.error('Cannot start tournament: Not connected to server');
-      return;
-    }
-    
-    console.log('Starting tournament:', tournamentId);
-    
-    this.sendMessage({
-      type: 'tournamentStart',
-      tournamentId
-    });
-  }
-  
-  /**
-   * Report a tournament match result
-   * @param {Object} resultData - Match result data
-   * @param {string} resultData.tournamentId - Tournament ID
-   * @param {string} resultData.matchId - Match ID
-   * @param {string} resultData.winnerId - Winner ID
-   */
-  reportTournamentMatchResult(resultData) {
-    if (!this.connected || !this.socket) {
-      console.error('Cannot report match result: Not connected to server');
-      return;
-    }
-    
-    console.log('Reporting match result:', resultData.matchId);
-    
-    this.sendMessage({
-      type: 'tournamentMatchComplete',
-      tournamentId: resultData.tournamentId,
-      matchId: resultData.matchId,
-      winnerId: resultData.winnerId
-    });
-  }
-  
-  /**
-   * Request tournament bracket data
-   * @param {string} tournamentId - Tournament ID
-   */
-  requestTournamentBracket(tournamentId) {
-    if (!this.connected || !this.socket) {
-      console.error('Cannot request tournament bracket: Not connected to server');
-      return;
-    }
-    
-    console.log('Requesting tournament bracket:', tournamentId);
-    
-    this.sendMessage({
-      type: 'tournamentBracketRequest',
-      tournamentId
-    });
-  }
-  
-  /**
-   * Register tournament callbacks
-   * @param {Object} callbacks - Tournament callbacks
-   * @param {Function} callbacks.onTournamentCreated - Called when a tournament is created
-   * @param {Function} callbacks.onTournamentJoined - Called when a player joins a tournament
-   * @param {Function} callbacks.onTournamentUpdated - Called when a tournament is updated
-   * @param {Function} callbacks.onNewTournament - Called when a new tournament is created
-   * @param {Function} callbacks.onActiveTournaments - Called when active tournaments list is received
-   */
-  registerTournamentCallbacks(callbacks) {
-    console.log('Registering tournament callbacks');
-    
-    if (callbacks) {
-      this._tournamentCallbacks = {
-        ...this._tournamentCallbacks,
-        ...callbacks
-      };
-    }
-    
-    console.log('Tournament callbacks registered:', Object.keys(this._tournamentCallbacks).filter(key => !!this._tournamentCallbacks[key]));
-  }
-  
-  /**
-   * Get current tournament data
-   * @returns {Object|null} - Current tournament data
-   */
-  getCurrentTournament() {
-    return this._currentTournament;
-  }
-  
-  /**
-   * Get available tournaments
-   * @returns {Array} - Available tournaments
-   */
-  getAvailableTournaments() {
-    return this._availableTournaments || [];
-  }
-  
-  /**
-   * Register a message handler for a specific message type
-   * @param {string} messageType - The message type to handle
-   * @param {Function} handler - The handler function
-   */
-  registerMessageHandler(messageType, handler) {
-    console.log(`Registering handler for message type: ${messageType}`);
-    
-    if (!this.messageHandlers) {
-      this.messageHandlers = {};
-    }
-    
-    if (!this.messageHandlers[messageType]) {
-      this.messageHandlers[messageType] = [];
-    }
-    
-    this.messageHandlers[messageType].push(handler);
-  }
-  
-  /**
-   * Unregister a message handler for a specific message type
-   * @param {string} messageType - The message type
-   * @param {Function} handler - The handler function to remove
-   */
-  unregisterMessageHandler(messageType, handler) {
-    console.log(`Unregistering handler for message type: ${messageType}`);
-    
-    if (!this.messageHandlers || !this.messageHandlers[messageType]) {
-      return;
-    }
-    
-    const index = this.messageHandlers[messageType].indexOf(handler);
-    if (index !== -1) {
-      this.messageHandlers[messageType].splice(index, 1);
-    }
-  }
-  
-  /**
-   * Set a status callback function
-   * @param {Function} callback - The callback function
-   */
-  setStatusCallback(callback) {
-    this.statusCallback = callback;
-  }
-  
-  /**
-   * Join a battle royale
-   * @param {string} battleRoyaleId - The ID of the battle royale to join
-   */
-  joinBattleRoyale(battleRoyaleId) {
-    if (!this.connected || !this.socket) {
-      console.error('Cannot join battle royale: Not connected to server');
-      return;
-    }
-    
-    console.log('Joining battle royale:', battleRoyaleId);
-    
-    this.sendMessage({
-      type: 'joinBattleRoyale',
-      battleRoyaleId
-    });
-  }
-  
-  /**
-   * Debug method to show detailed information about other players
-   * Can be called from browser console: window.webSocketManager.debugPlayers()
-   */
-  debugPlayers() {
-    console.log('===== PLAYER DEBUG INFO =====');
-    console.log('Current player ID:', this.playerId);
-    console.log('Current game mode:', window.game?.gameMode);
-    console.log('Current tournament:', this._currentTournament);
-    console.log('Other players count:', Object.keys(this.otherPlayers).length);
-    
-    if (Object.keys(this.otherPlayers).length > 0) {
-      console.log('Other players details:');
-      Object.values(this.otherPlayers).forEach(player => {
-        console.log(`- Player ${player.id}:`);
-        console.log(`  Class: ${player.class || player.characterClass}`);
-        console.log(`  Position:`, player.position);
-        console.log(`  Health: ${player.health}/${player.stats?.health}`);
-      });
-    } else {
-      console.log('No other players stored in WebSocketManager');
-    }
-    
-    // Check EntityManager if available
-    if (window.game?.entityManager) {
-      const entities = window.game.entityManager.getEntitiesByType('otherPlayer');
-      console.log('Entity Manager - Other players count:', entities.length);
-      
-      if (entities.length > 0) {
-        console.log('Entity Manager - Other players details:');
-        entities.forEach(entity => {
-          console.log(`- Entity ${entity.id}:`);
-          console.log(`  Type: ${entity.type}`);
-          console.log(`  Class: ${entity.classType}`);
-          console.log(`  Position:`, entity.position);
-          console.log(`  Mesh visible:`, entity.mesh?.visible);
-          console.log(`  Health: ${entity.health}/${entity.stats?.health}`);
-        });
-      } else {
-        console.log('No other player entities in EntityManager');
-      }
-    }
-    
-    console.log('===== END PLAYER DEBUG INFO =====');
-    
-    return {
-      currentPlayerID: this.playerId,
-      otherPlayerCount: Object.keys(this.otherPlayers).length,
-      otherPlayerIDs: Object.keys(this.otherPlayers),
-      entityCount: window.game?.entityManager ? 
-                  window.game.entityManager.getEntitiesByType('otherPlayer').length : 
-                  'EntityManager not available'
-    };
-  }
-  
-  /**
-   * Force a request for existing players
-   * This can be called from the console to try to fix visibility issues
-   * Usage: window.webSocketManager.forceGetExistingPlayers()
-   */
-  forceGetExistingPlayers() {
-    console.log('[NETWORK] Forcing request for existing players');
-    console.log('[NETWORK] Current player ID:', this.playerId);
-    console.log('[NETWORK] Current game mode:', window.game?.gameMode);
-    console.log('[NETWORK] Current tournament:', this._currentTournament);
+    console.log('[NETWORK] Requesting tournament players for tournament:', tournamentId);
     
     // Create request message
-    const getExistingPlayersMsg = {
-      type: 'getExistingPlayers'
+    const message = {
+      type: 'getTournamentPlayers',
+      tournamentId: tournamentId
     };
     
-    // If in a tournament, include the tournament ID
-    if (this._currentTournament && this._currentTournament.id) {
-      getExistingPlayersMsg.tournamentId = this._currentTournament.id;
-      console.log(`[NETWORK] Including tournament ID in request: ${this._currentTournament.id}`);
-    }
-    
     // Send the request
-    const requestSent = this.sendMessage(getExistingPlayersMsg);
-    console.log('[NETWORK] Force getExistingPlayers request sent:', requestSent);
-    
-    // Also try to clear and re-initialize other players
-    console.log('[NETWORK] Clearing other players cache to force refresh');
-    this.otherPlayers = {};
+    const requestSent = this.sendMessage(message);
+    console.log('[NETWORK] Tournament players request sent:', requestSent);
     
     return requestSent;
+  }
+  
+  /**
+   * Debug method to refresh tournament players
+   * This can be called from the console: window.webSocketManager.debugRefreshTournamentPlayers()
+   */
+  debugRefreshTournamentPlayers() {
+    console.log('[NETWORK DEBUG] Manual refresh of tournament players requested');
+    
+    if (!this._currentTournament || !this._currentTournament.id) {
+      console.error('[NETWORK DEBUG] No active tournament found');
+      return false;
+    }
+    
+    console.log('[NETWORK DEBUG] Current tournament ID:', this._currentTournament.id);
+    
+    // Request tournament players
+    const requestSent = this.requestTournamentPlayers(this._currentTournament.id);
+    
+    // Also request existing players as a fallback
+    this.forceGetExistingPlayers();
+    
+    return requestSent;
+  }
+  
+  /**
+   * Force a refresh of tournament players
+   * This can be called from the console to try to fix visibility issues in tournaments
+   * Usage: window.forceTournamentPlayersRefresh()
+   */
+  forceTournamentPlayersRefresh() {
+    console.log('[NETWORK] Forcing refresh of tournament players');
+    
+    // Check if we're in a tournament
+    if (!this._currentTournament || !this._currentTournament.id) {
+      console.warn('[NETWORK] Not in a tournament, cannot refresh tournament players');
+      return false;
+    }
+    
+    const tournamentId = this._currentTournament.id;
+    console.log(`[NETWORK] Current tournament ID: ${tournamentId}`);
+    
+    // First request tournament players
+    console.log('[NETWORK] Requesting tournament players');
+    this.requestTournamentPlayers(tournamentId);
+    
+    // Then request existing players with tournament ID
+    console.log('[NETWORK] Requesting existing players with tournament ID');
+    this.sendMessage({
+      type: 'getExistingPlayers',
+      tournamentId: tournamentId
+    });
+    
+    // Finally, request all existing players as a fallback
+    console.log('[NETWORK] Requesting all existing players as fallback');
+    this.forceGetExistingPlayers();
+    
+    return true;
+  }
+  
+  /**
+   * Make this method available globally for console debugging
+   * @private
+   */
+  _exposeDebugMethods() {
+    if (typeof window !== 'undefined') {
+      // Expose the WebSocketManager instance
+      window.webSocketManager = this;
+      
+      // Expose specific debug methods
+      window.forceGetExistingPlayers = this.forceGetExistingPlayers.bind(this);
+      window.debugNetwork = this.debugConnection.bind(this);
+      window.debugPlayerVisibility = this.debugPlayerVisibility.bind(this);
+      window.forceTournamentPlayersRefresh = this.forceTournamentPlayersRefresh.bind(this);
+      
+      console.log('[NETWORK DEBUG] Debug methods exposed to window object');
+    }
+  }
+  
+  /**
+   * Debug function to help troubleshoot player visibility issues
+   * Usage: window.debugPlayerVisibility()
+   */
+  debugPlayerVisibility() {
+    console.log('=== PLAYER VISIBILITY DEBUG ===');
+    console.log('Current player ID:', this.playerId);
+    console.log('Game mode:', window.game?.gameMode);
+    console.log('Current tournament:', this._currentTournament);
+    console.log('Other players:', this.otherPlayers);
+    
+    // Check if EntityManager has the players
+    if (window.entityManager) {
+      console.log('EntityManager entities:', window.entityManager.entities);
+      
+      // Check if other players are in the scene
+      Object.values(this.otherPlayers).forEach(player => {
+        const entity = window.entityManager.getEntity(player.id);
+        console.log(`Player ${player.id} in EntityManager:`, !!entity);
+        
+        if (entity) {
+          console.log(`Player ${player.id} mesh in scene:`, entity.mesh?.parent === window.renderer?.scene);
+          console.log(`Player ${player.id} position:`, entity.position);
+          console.log(`Player ${player.id} visible:`, entity.mesh?.visible);
+        }
+      });
+    }
+    
+    // Force refresh of existing players
+    console.log('Forcing refresh of existing players...');
+    this.forceGetExistingPlayers();
+    
+    return 'Player visibility debug complete. Check console for details.';
   }
 }
 
 // Create and export singleton instance
 const webSocketManager = new WebSocketManager();
-export default webSocketManager; 
+export default webSocketManager;

@@ -24,40 +24,58 @@ class Renderer {
 
   /**
    * Initialize the renderer
-   * @param {HTMLCanvasElement} canvas - Canvas element to render on
+   * @param {HTMLCanvasElement} canvas - The canvas element to render to
    * @returns {Renderer} - This instance for chaining
    */
   init(canvas) {
-    if (this.isInitialized) return this;
+    console.log('Initializing renderer');
     
-    // Create scene
-    this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x87ceeb); // Sky blue background
+    // Store canvas reference
+    this.canvas = canvas;
     
-    // Create camera (default to orthographic for isometric view)
-    this.setupIsometricCamera();
-    
-    // Create renderer
+    // Create THREE.js renderer
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: true
+      antialias: true,
+      alpha: true
     });
+    
+    // Configure renderer
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     
-    // Add window resize handler
-    window.addEventListener('resize', this.onResize);
+    // Create scene
+    this.scene = new THREE.Scene();
     
-    // Set up basic lighting
+    // Set up isometric camera
+    this.setupIsometricCamera();
+    
+    // Set up lighting
     this.setupLighting();
+    
+    // Handle window resize
+    window.addEventListener('resize', this.onResize);
     
     // Set up event listeners
     eventBus.on('renderer.addObject', this._handleAddObject.bind(this));
+    eventBus.on('renderer.removeObject', this._handleRemoveObject.bind(this));
+    
+    // Expose renderer to window for debugging
+    if (typeof window !== 'undefined') {
+      window.renderer = this;
+      console.log('[RENDERER] Exposed renderer to window.renderer for debugging');
+      
+      // Make camera globally available for raycasting
+      window.currentCamera = this.camera;
+      console.log('[RENDERER] Exposed camera to window.currentCamera for raycasting');
+    }
     
     // Set initialization flag
     this.isInitialized = true;
     
+    console.log('Renderer initialized successfully');
     return this;
   }
 
@@ -235,8 +253,14 @@ class Renderer {
       return;
     }
     
-    // Make camera globally available for raycasting
-    window.currentCamera = this.camera;
+    // Make camera globally available for raycasting (ensure it's set)
+    if (typeof window !== 'undefined' && this.camera) {
+      window.currentCamera = this.camera;
+      console.log('[RENDERER] Ensuring camera is exposed for raycasting');
+    } else if (!this.camera) {
+      console.error('[RENDERER] No camera available for raycasting');
+      return;
+    }
     
     if (this.animationId === null) {
       this.render();
@@ -320,6 +344,17 @@ class Renderer {
   }
 
   /**
+   * Handle remove object event
+   * @param {Object} data - Event data
+   * @private
+   */
+  _handleRemoveObject(data) {
+    if (data && data.id) {
+      this.removeObject(data.id);
+    }
+  }
+
+  /**
    * Clean up resources
    */
   dispose() {
@@ -329,6 +364,7 @@ class Renderer {
     // Remove event listeners
     window.removeEventListener('resize', this.onResize);
     eventBus.off('renderer.addObject');
+    eventBus.off('renderer.removeObject');
     
     // Clean up objects
     this.objects.forEach((object, id) => {

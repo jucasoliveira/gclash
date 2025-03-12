@@ -49,6 +49,9 @@ class EntityManager {
     eventBus.on('combat.getEntity', this._handleGetEntity.bind(this));
     eventBus.on('combat.attackRequested', this._handleAttackRequested.bind(this));
     
+    // Expose debug methods to window
+    this._exposeDebugMethods();
+    
     console.log('[ENTITY MANAGER] All event listeners registered');
     
     // Add direct player access event handler
@@ -253,12 +256,19 @@ class EntityManager {
 
   /**
    * Handle existing players data from server
-   * @param {Array} players - Array of player data
+   * @param {Object|Array} data - Object containing players array or array of player data
    * @private
    */
-  _handleExistingPlayers(players) {
-    console.log('[ENTITY] Handling existing players:', players);
+  _handleExistingPlayers(data) {
+    console.log('[ENTITY] Handling existing players:', data);
     console.log('[ENTITY] Current player ID:', window.webSocketManager?.playerId);
+    
+    // Extract players array from data if it's an object with players property
+    let players = data;
+    if (data && typeof data === 'object' && !Array.isArray(data) && data.players) {
+      console.log('[ENTITY] Extracting players array from data object');
+      players = data.players;
+    }
     
     if (!Array.isArray(players) || players.length === 0) {
       console.log('[ENTITY] No existing players to handle or invalid data format');
@@ -2207,6 +2217,213 @@ class EntityManager {
     
     // Start animation
     requestAnimationFrame(animate);
+  }
+
+  /**
+   * Debug method to log all entities and their visibility status
+   * Can be called from console: window.debugEntities()
+   */
+  debugEntities() {
+    console.log('[ENTITY DEBUG] ===== Entity Debug Information =====');
+    console.log(`[ENTITY DEBUG] Total entities: ${Object.keys(this.entities).length}`);
+    
+    // Log each entity
+    Object.values(this.entities).forEach(entity => {
+      const hasMesh = !!entity.mesh;
+      const isVisible = hasMesh && entity.mesh.visible;
+      const isInScene = hasMesh && !!entity.mesh.parent;
+      const position = entity.position ? 
+        `x:${entity.position.x.toFixed(2)}, y:${entity.position.y.toFixed(2)}, z:${entity.position.z.toFixed(2)}` : 
+        'unknown';
+      
+      console.log(`[ENTITY DEBUG] Entity ID: ${entity.id}`);
+      console.log(`[ENTITY DEBUG]   - Type: ${entity.type}`);
+      console.log(`[ENTITY DEBUG]   - Has Mesh: ${hasMesh}`);
+      console.log(`[ENTITY DEBUG]   - Is Visible: ${isVisible}`);
+      console.log(`[ENTITY DEBUG]   - In Scene: ${isInScene}`);
+      console.log(`[ENTITY DEBUG]   - Position: ${position}`);
+      
+      if (entity.type === 'otherPlayer') {
+        console.log(`[ENTITY DEBUG]   - Class: ${entity.classType}`);
+        console.log(`[ENTITY DEBUG]   - Health: ${entity.health}/${entity.stats?.health || 'unknown'}`);
+      }
+      
+      console.log('[ENTITY DEBUG] -----------------------');
+    });
+    
+    console.log('[ENTITY DEBUG] ===== End Entity Debug =====');
+  }
+  
+  /**
+   * Force refresh all player meshes to ensure they're visible
+   * @returns {number} - Number of players refreshed
+   */
+  forceRefreshPlayerMeshes() {
+    console.log('[ENTITY] Force refreshing all player meshes');
+    
+    let count = 0;
+    
+    // Get all other players
+    const otherPlayers = this.getEntitiesByType('otherPlayer');
+    console.log(`[ENTITY] Found ${otherPlayers.length} other players to refresh`);
+    
+    // Refresh each player
+    otherPlayers.forEach(player => {
+      count++;
+      
+      // Check if player has a mesh
+      if (player.mesh) {
+        console.log(`[ENTITY] Player ${player.id} has a mesh, checking if it's in the scene`);
+        
+        // Check if mesh is in the scene
+        const objectId = `player-${player.id}`;
+        const isInScene = renderer.getObject(objectId);
+        
+        if (!isInScene) {
+          console.log(`[ENTITY] Adding mesh for player ${player.id} to scene`);
+          renderer.addObject(objectId, player.mesh);
+        }
+        
+        // Ensure mesh is visible
+        player.mesh.visible = true;
+        console.log(`[ENTITY] Ensured player ${player.id} is visible`);
+      } else {
+        console.warn(`[ENTITY] Player ${player.id} has no mesh, attempting to create one`);
+        
+        // Try to recreate mesh if player has the method
+        if (player._createPlayerMesh) {
+          player._createPlayerMesh();
+          
+          if (player.mesh) {
+            console.log(`[ENTITY] Created mesh for player ${player.id}, adding to scene`);
+            renderer.addObject(`player-${player.id}`, player.mesh);
+            player.mesh.visible = true;
+          }
+        }
+      }
+    });
+    
+    console.log(`[ENTITY] Refreshed ${count} player meshes`);
+    return count;
+  }
+
+  /**
+   * Debug function to help troubleshoot player visibility issues
+   * @returns {string} - Debug message
+   */
+  debugPlayerVisibility() {
+    console.log('=== ENTITY MANAGER PLAYER VISIBILITY DEBUG ===');
+    
+    // Log local player info
+    if (this.player) {
+      console.log('Local player:', {
+        id: this.player.id,
+        class: this.player.characterClass,
+        position: this.player.position ? {
+          x: this.player.position.x,
+          y: this.player.position.y,
+          z: this.player.position.z
+        } : 'No position',
+        health: this.player.health,
+        mesh: this.player.mesh ? 'Exists' : 'Missing'
+      });
+      
+      if (this.player.mesh) {
+        console.log('Local player mesh visible:', this.player.mesh.visible);
+        console.log('Local player mesh in scene:', this.player.mesh.parent === renderer.scene);
+      }
+    } else {
+      console.log('No local player found');
+    }
+    
+    // Log other players
+    console.log('Other players:');
+    let otherPlayersCount = 0;
+    let visibleCount = 0;
+    
+    this.entities.forEach(entity => {
+      if (entity.type === 'otherPlayer') {
+        otherPlayersCount++;
+        const isVisible = entity.mesh && entity.mesh.visible;
+        const isInScene = entity.mesh && entity.mesh.parent === renderer.scene;
+        
+        if (isVisible) visibleCount++;
+        
+        console.log(`Player ${entity.id}:`, {
+          class: entity.characterClass,
+          position: entity.position ? {
+            x: entity.position.x,
+            y: entity.position.y,
+            z: entity.position.z
+          } : 'No position',
+          health: entity.health,
+          mesh: entity.mesh ? 'Exists' : 'Missing',
+          visible: isVisible,
+          inScene: isInScene
+        });
+      }
+    });
+    
+    console.log(`Found ${otherPlayersCount} other players, ${visibleCount} visible`);
+    
+    // Check WebSocketManager's player list
+    if (window.webSocketManager) {
+      console.log('WebSocketManager other players:');
+      const wsPlayers = window.webSocketManager.otherPlayers || {};
+      const wsPlayerIds = Object.keys(wsPlayers);
+      
+      console.log(`WebSocketManager has ${wsPlayerIds.length} other players:`, wsPlayerIds);
+      
+      // Check for players in WebSocketManager but not in EntityManager
+      wsPlayerIds.forEach(id => {
+        if (!this.getEntity(id)) {
+          console.log(`Player ${id} exists in WebSocketManager but not in EntityManager`);
+          console.log('Player data:', wsPlayers[id]);
+        }
+      });
+      
+      // Check for players in EntityManager but not in WebSocketManager
+      this.entities.forEach(entity => {
+        if (entity.type === 'otherPlayer' && !wsPlayers[entity.id]) {
+          console.log(`Player ${entity.id} exists in EntityManager but not in WebSocketManager`);
+        }
+      });
+    }
+    
+    // Force refresh of player meshes
+    console.log('Forcing refresh of player meshes...');
+    const refreshedCount = this.forceRefreshPlayerMeshes();
+    console.log(`Refreshed ${refreshedCount} player meshes`);
+    
+    return `Player visibility debug complete. Found ${otherPlayersCount} other players, ${visibleCount} visible.`;
+  }
+
+  /**
+   * Expose debug methods to window object
+   * @private
+   */
+  _exposeDebugMethods() {
+    if (typeof window !== 'undefined') {
+      window.entityManager = this;
+      window.debugEntityManager = () => {
+        console.log('Entities:', this.entities);
+        console.log('Player:', this.player);
+        return {
+          entitiesCount: this.entities.size,
+          playerExists: !!this.player,
+          entities: Array.from(this.entities.values()).map(e => ({
+            id: e.id,
+            type: e.type,
+            position: e.position ? [e.position.x, e.position.y, e.position.z] : null
+          }))
+        };
+      };
+      
+      // Add player visibility debug function
+      window.debugPlayerVisibility = this.debugPlayerVisibility.bind(this);
+      
+      console.log('[ENTITY DEBUG] Debug methods exposed to window object');
+    }
   }
 }
 

@@ -1101,6 +1101,85 @@ wss.on('connection', (ws) => {
         }
       }
       
+      // Handle getExistingPlayers request
+      else if (data.type === 'getExistingPlayers') {
+        console.log(`Player ${clientId} requested existing players`);
+        console.log(`Tournament ID in request: ${data.tournamentId || 'none'}`);
+        
+        // Get all active players except the requesting player
+        const activePlayers = [];
+        
+        // If a tournament ID is specified, only return players in that tournament
+        if (data.tournamentId && activeTournaments[data.tournamentId]) {
+          console.log(`Filtering players for tournament: ${data.tournamentId}`);
+          const tournament = activeTournaments[data.tournamentId];
+          
+          console.log(`Tournament has ${tournament.players.length} players`);
+          console.log(`Tournament players: ${JSON.stringify(tournament.players.map(p => p.id || p))}`);
+          
+          // Get all players in this tournament
+          tournament.players.forEach(tournamentPlayer => {
+            const playerId = tournamentPlayer.id || tournamentPlayer;
+            
+            // Skip the requesting player
+            if (playerId === clientId) {
+              console.log(`Skipping requesting player: ${playerId}`);
+              return;
+            }
+            
+            // Get the player data
+            const playerData = players[playerId];
+            if (!playerData || !playerData.connected) {
+              console.log(`Player ${playerId} not found or not connected, skipping`);
+              return;
+            }
+            
+            console.log(`Adding tournament player ${playerId} to response`);
+            
+            activePlayers.push({
+              id: playerId,
+              username: playerData.username,
+              characterClass: playerData.characterClass,
+              position: playerData.position || { x: 0, y: 0, z: 0 },
+              stats: playerData.stats,
+              health: playerData.stats?.health,
+              maxHealth: playerData.stats?.maxHealth,
+              tournamentId: data.tournamentId
+            });
+          });
+        } 
+        // Otherwise, return all active players
+        else {
+          console.log('No tournament ID specified, returning all active players');
+          
+          Object.keys(players).forEach(id => {
+            if (id !== clientId && players[id].connected) {
+              console.log(`Adding player ${id} to response`);
+              
+              activePlayers.push({
+                id: id,
+                username: players[id].username,
+                characterClass: players[id].characterClass,
+                position: players[id].position || { x: 0, y: 0, z: 0 },
+                stats: players[id].stats,
+                health: players[id].stats?.health,
+                maxHealth: players[id].stats?.maxHealth
+              });
+            }
+          });
+        }
+        
+        console.log(`Sending ${activePlayers.length} existing players to ${clientId}`);
+        console.log(`Player IDs: ${activePlayers.map(p => p.id).join(', ')}`);
+        
+        // Send existing players to the requesting client
+        ws.send(JSON.stringify({
+          type: 'existingPlayers',
+          players: activePlayers,
+          tournamentId: data.tournamentId
+        }));
+      }
+      
       // Handle player attacks
       else if (data.type === 'playerAttack') {
         const { targetId, damage, attackType } = data;
@@ -1452,42 +1531,28 @@ wss.on('connection', (ws) => {
         
         // Check if player is already in this tournament
         const existingPlayerIndex = tournament.players.findIndex(p => p.id === clientId);
+        
         if (existingPlayerIndex >= 0) {
           console.log(`Player ${clientId} is already in tournament ${data.tournamentId}`);
+          
+          // Send confirmation to the player
           ws.send(JSON.stringify({
             type: 'tournamentJoined',
             tournament: {
               id: tournament.id,
               name: tournament.name,
-              playerCount: tournament.players.length,
-              players: tournament.players,
-              status: tournament.status
+              status: tournament.status,
+              playerCount: tournament.players.length
             }
           }));
-          return;
-        }
-        
-        // Check if tournament is full
-        if (tournament.players.length >= tournament.maxPlayers) {
-          console.error(`Tournament ${data.tournamentId} is full`);
-          ws.send(JSON.stringify({
-            type: 'error',
-            message: 'Tournament is full'
-          }));
+          
           return;
         }
         
         // Add player to tournament
-        tournament.players.push({
-          id: clientId,
-          username: players[clientId].username,
-          characterClass: players[clientId].characterClass
-        });
-        
-        // Update player's currentTournament field
-        players[clientId].currentTournament = data.tournamentId;
-        
-        console.log(`Player ${clientId} joined tournament ${data.tournamentId}. Current player count: ${tournament.players.length}`);
+        tournament.players.push({ id: clientId });
+        console.log(`Player ${clientId} joined tournament ${data.tournamentId}`);
+        console.log(`Tournament ${data.tournamentId} now has ${tournament.players.length} players`);
         
         // Send confirmation to the player
         ws.send(JSON.stringify({
@@ -1495,22 +1560,89 @@ wss.on('connection', (ws) => {
           tournament: {
             id: tournament.id,
             name: tournament.name,
-            playerCount: tournament.players.length,
-            players: tournament.players,
-            status: tournament.status
+            status: tournament.status,
+            playerCount: tournament.players.length
           }
         }));
         
-        // Broadcast updated player count to all players
+        // Broadcast player count update to all clients
         broadcastToAll({
-          type: 'tournamentUpdated',
-          tournament: {
-            id: tournament.id,
-            name: tournament.name,
-            playerCount: tournament.players.length,
-            status: tournament.status
-          }
+          type: 'tournamentPlayerCount',
+          tournamentId: data.tournamentId,
+          playerCount: tournament.players.length
         });
+        
+        // Check if tournament is ready to start
+        checkTournamentReady(data.tournamentId);
+        
+        // ENHANCEMENT: Broadcast the joining player to all other players in the tournament
+        // This ensures all existing players can see the new player immediately
+        const joiningPlayerData = players[clientId];
+        if (joiningPlayerData) {
+          // For each player in the tournament
+          tournament.players.forEach(tournamentPlayer => {
+            // Skip the joining player
+            if (tournamentPlayer.id === clientId) return;
+            
+            // Find the player's WebSocket connection
+            const playerWs = [...wss.clients].find(client => 
+              client.readyState === WebSocket.OPEN && 
+              client.id === tournamentPlayer.id
+            );
+            
+            if (playerWs) {
+              // Send the joining player data to this existing player
+              playerWs.send(JSON.stringify({
+                type: 'playerJoined',
+                player: {
+                  id: joiningPlayerData.id,
+                  username: joiningPlayerData.username,
+                  position: joiningPlayerData.position,
+                  characterClass: joiningPlayerData.characterClass,
+                  stats: joiningPlayerData.stats,
+                  health: joiningPlayerData.health,
+                  maxHealth: joiningPlayerData.maxHealth,
+                  tournamentId: data.tournamentId
+                },
+                tournamentId: data.tournamentId
+              }));
+              
+              console.log(`Sent joining player ${clientId} data to existing player ${tournamentPlayer.id}`);
+            }
+          });
+        }
+        
+        // ENHANCEMENT: Send all existing tournament players to the joining player
+        // This ensures the joining player can see all existing players immediately
+        const tournamentPlayersList = tournament.players
+          .filter(p => p.id !== clientId) // Exclude the joining player
+          .map(p => {
+            const playerData = players[p.id];
+            if (!playerData) return null;
+            
+            return {
+              id: playerData.id,
+              username: playerData.username,
+              position: playerData.position,
+              characterClass: playerData.characterClass,
+              stats: playerData.stats,
+              health: playerData.health,
+              maxHealth: playerData.maxHealth,
+              tournamentId: data.tournamentId
+            };
+          })
+          .filter(Boolean); // Remove any null entries
+        
+        if (tournamentPlayersList.length > 0) {
+          // Send existing players to the joining player
+          ws.send(JSON.stringify({
+            type: 'existingPlayers',
+            players: tournamentPlayersList,
+            tournamentId: data.tournamentId
+          }));
+          
+          console.log(`Sent ${tournamentPlayersList.length} existing players to joining player ${clientId}`);
+        }
       }
       
       // Handle tournament start
@@ -1679,6 +1811,50 @@ wss.on('connection', (ws) => {
           status: tournament.status,
           brackets: tournament.brackets,
           winner: tournament.winner
+        }));
+      }
+      
+      // Handle tournament players request
+      else if (data.type === 'getTournamentPlayers') {
+        console.log(`Player ${clientId} requested tournament players for tournament ${data.tournamentId}`);
+        
+        // Verify tournament exists
+        if (!activeTournaments[data.tournamentId]) {
+          console.error(`Tournament ${data.tournamentId} not found`);
+          ws.send(JSON.stringify({
+            type: 'error',
+            message: 'Tournament not found'
+          }));
+          return;
+        }
+        
+        const tournament = activeTournaments[data.tournamentId];
+        
+        // Get all players in this tournament
+        const tournamentPlayers = tournament.players.map(playerId => {
+          // Get the full player data
+          const player = players[playerId.id || playerId];
+          if (!player) return null;
+          
+          return {
+            id: player.id,
+            username: player.username,
+            position: player.position,
+            characterClass: player.characterClass,
+            stats: player.stats,
+            health: player.health,
+            maxHealth: player.maxHealth,
+            tournamentId: data.tournamentId
+          };
+        }).filter(Boolean); // Remove any null entries
+        
+        console.log(`Sending ${tournamentPlayers.length} tournament players to ${clientId}`);
+        
+        // Send tournament players to the requesting client
+        ws.send(JSON.stringify({
+          type: 'existingPlayers',
+          players: tournamentPlayers,
+          tournamentId: data.tournamentId
         }));
       }
       
