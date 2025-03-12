@@ -51,6 +51,7 @@ function GameCanvas() {
         try {
           // First, set the game mode
           game.gameMode = gameMode;
+          console.log(`Setting game mode to: ${gameMode}`);
           
           // Convert to uppercase for compatibility with existing code
           const classForGame = characterClass.toUpperCase();
@@ -67,6 +68,7 @@ function GameCanvas() {
           if (gameMode === 'tournament' && tournament) {
             game.currentTournamentId = tournament.id;
             game.currentTournamentName = tournament.name;
+            console.log(`Set tournament data: ${tournament.id} - ${tournament.name}`);
           }
           
           // Hide character selection UI (in case it's showing)
@@ -78,11 +80,10 @@ function GameCanvas() {
           // Set state to playing
           game.state = 'playing';
           
-          // Start the game with the selected character class
-          // But skip the map loading since we already did it
+          // Prevent double map loading by temporarily overriding the _loadMap method
           const originalLoadMap = game._loadMap;
-          game._loadMap = () => {
-            console.log('Map loading skipped - already loaded');
+          game._loadMap = function(mode) {
+            console.log(`Map loading skipped - already loaded ${gameMode} map`);
             return Promise.resolve();
           };
           

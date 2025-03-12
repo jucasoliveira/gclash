@@ -27,6 +27,8 @@ class TournamentMap {
    * @returns {TournamentMap} - This instance for chaining
    */
   init(options = {}) {
+    console.log('[TOURNAMENT MAP] Initializing tournament map');
+    
     // Apply options
     if (options.size !== undefined) this.size = options.size;
     if (options.wallHeight !== undefined) this.wallHeight = options.wallHeight;
@@ -46,8 +48,9 @@ class TournamentMap {
     // Create spotlights for tournament arena feel
     this.createSpotlights();
     
-    // Emit event that map is ready
-    eventBus.emit('map.ready', { type: 'tournament' });
+    // Emit event that map is ready - use the correct event name
+    console.log('[TOURNAMENT MAP] Tournament map initialization complete, emitting ready event');
+    eventBus.emit('tournamentMap.ready', { type: 'tournament' });
     
     return this;
   }

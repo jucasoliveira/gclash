@@ -719,121 +719,110 @@ class Player extends Entity {
    * Take damage
    * @param {number} amount - Amount of damage to take
    * @param {boolean} fromNetwork - Whether this damage is from a network event
-   * @returns {number} - Remaining health
+   * @returns {boolean} - True if player died, false otherwise
    */
   takeDamage(amount, fromNetwork = false) {
-    const oldHealth = this.health;
-    this.health = Math.max(0, this.health - amount);
+    console.log(`[PLAYER] Taking ${amount} damage. Current health: ${this.health}/${this.stats.health}`);
     
-    console.log(`[HEALTH] ${this.id}: ${oldHealth} -> ${this.health} (${amount} damage)${fromNetwork ? ' [SERVER CONFIRMED]' : ''}`);
-    
-    // DIRECTLY UPDATE THE GAME UI
-    // Find the Game instance through the global window object
-    if (window.game && typeof window.game.updateHealthUI === 'function') {
-      console.log(`[CRITICAL] Directly calling game.updateHealthUI from Player.takeDamage: ${this.health}/${this.stats.health}`);
-      window.game.updateHealthUI(this.health, this.stats.health);
+    // Skip if already dead
+    if (this.health <= 0) {
+      console.log('[PLAYER] Already dead, ignoring damage');
+      return true;
     }
     
-    // Also update through our own method for redundancy
+    // Skip if amount is invalid
+    if (!amount || amount <= 0) {
+      console.log('[PLAYER] Invalid damage amount:', amount);
+      return false;
+    }
+    
+    // Ensure health is a valid number
+    if (typeof this.health !== 'number' || isNaN(this.health)) {
+      console.warn('[PLAYER] Invalid health value, resetting to max health');
+      this.health = this.stats.health;
+    }
+    
+    // Ensure stats.health is valid based on class
+    if (!this.stats.health) {
+      console.warn('[PLAYER] Missing stats.health, using default values based on class');
+      // Set default health values based on class
+      const defaultHealthByClass = {
+        'CLERK': 80,
+        'WARRIOR': 120,
+        'RANGER': 100
+      };
+      this.stats.health = defaultHealthByClass[this.classType] || 100;
+    }
+    
+    // Calculate original health
+    const oldHealth = this.health;
+    
+    // Apply damage
+    this.health = Math.max(0, this.health - amount);
+    
+    console.log(`[PLAYER] Health updated: ${oldHealth} -> ${this.health} (${amount} damage)`);
+    
+    // CRITICAL: Direct DOM manipulation for health bar
     this._updateHealthUI();
     
-    // Emit health changed event for other systems
-    eventBus.emit(`entity.${this.id}.healthChanged`, {
-      entityId: this.id,
-      health: this.health,
-      maxHealth: this.stats.health
-    });
+    // Play damage effect
+    this._playDamageEffect();
     
-    // Emit global health change event that Game.js can listen for
-    eventBus.emit('player.healthChanged', {
-      id: this.id,
-      health: this.health,
-      maxHealth: this.stats.health,
-      damage: amount
-    });
-    
-    // Only send health update to server if this damage wasn't already from the network
-    // This prevents feedback loops where A tells B tells A tells B...
+    // If health update didn't come from the network, send it
     if (!fromNetwork) {
+      console.log('[PLAYER] Sending health update to server');
       webSocketManager.updateHealth({
+        id: this.id,
         health: this.health,
         maxHealth: this.stats.health,
         damage: amount
       });
     }
     
-    // Play damage effect
-    this._playDamageEffect();
-    
-    // CRITICAL: Direct DOM manipulation for health bar
-    const healthFill = document.getElementById('health-fill');
-    const playerStats = document.getElementById('player-stats');
-    
-    if (healthFill) {
-      const healthPercent = (this.health / this.stats.health) * 100;
-      
-      // Force immediate update
-      healthFill.style.transition = 'none';
-      healthFill.style.width = `${healthPercent}%`;
-      healthFill.offsetHeight; // Force reflow
-      
-      // Update color based on health percentage
-      if (healthPercent > 60) {
-        healthFill.style.backgroundColor = '#2ecc71'; // Green
-      } else if (healthPercent > 30) {
-        healthFill.style.backgroundColor = '#f39c12'; // Orange
-      } else {
-        healthFill.style.backgroundColor = '#e74c3c'; // Red
-      }
-      
-      console.log(`[CRITICAL] Direct DOM health bar update to ${healthPercent}%`);
-      
-      // Re-enable transition
-      setTimeout(() => {
-        healthFill.style.transition = 'width 0.3s ease-out, background-color 0.3s ease-out';
-      }, 50);
-    }
-    
-    if (playerStats) {
-      playerStats.textContent = `Health: ${Math.round(this.health)}/${this.stats.health}`;
-    }
-    
-    // Update the health orb in the new HUD
-    eventBus.emit('player.healthChanged', {
-      id: this.id, // Include player ID for filtering
-      health: this.health,
-      maxHealth: this.stats.health
-    });
-    
     // Check if player died
     if (this.health <= 0) {
-      console.log(`[DEATH] ${this.id} died from ${amount} damage`);
-      
-      // Emit death event
-      eventBus.emit(`entity.${this.id}.died`, { entityId: this.id });
-      
-      // Send death notification to server (only if not from network)
-      if (!fromNetwork) {
-        webSocketManager.sendDeath({
-          attackerId: this.lastAttackerId
-        });
-      }
+      console.log('[PLAYER] Player died');
       
       // Hide player mesh
       if (this.mesh) {
         this.mesh.visible = false;
+        console.log('[PLAYER] Making player mesh invisible on death');
       }
       
       // Show death effect
       this._showDeathEffect();
       
-      // If this is the local player, show death screen
-      if (this.id === webSocketManager.playerId && window.showDeathScreen) {
-        window.showDeathScreen('Unknown'); // We don't know the attacker here
+      // Emit death event
+      eventBus.emit('player.died', { id: this.id });
+      
+      // If death update didn't come from network, send it
+      if (!fromNetwork) {
+        console.log('[PLAYER] Sending death notification to server');
+        webSocketManager.sendDeath({
+          id: this.id
+        });
       }
+      
+      // If this is the local player, show death screen
+      if (this.id === webSocketManager.playerId) {
+        console.log('[PLAYER] Using global death screen');
+        if (window.showDeathScreen) {
+          window.showDeathScreen('Unknown'); // We don't know the attacker here
+        }
+      }
+      
+      // Auto-respawn after a delay
+      console.log('Auto-respawning player after death');
+      setTimeout(() => {
+        this._respawn();
+      }, 3000);
+      
+      // Return true to indicate death
+      return true;
     }
     
-    return this.health;
+    // Return false to indicate player is still alive
+    return false;
   }
   
   /**
@@ -1249,72 +1238,47 @@ class Player extends Entity {
    * @private
    */
   _updateHealthUI() {
-    // Make sure the game UI is visible if it's not already
-    const gameUI = document.getElementById('game-ui');
-    if (gameUI && !gameUI.classList.contains('visible')) {
-      gameUI.classList.add('visible');
-    }
+    console.log(`UPDATING PLAYER UI: Health = ${this.health}/${this.stats.health}`);
     
+    // Update health bar
     const healthFill = document.getElementById('health-fill');
     const playerStats = document.getElementById('player-stats');
     
-    // Ensure health is clamped to valid range (0 to max)
-    const validHealth = Math.max(0, Math.min(this.stats.health, this.health));
-    
-    console.log(`UPDATING PLAYER UI: Health = ${validHealth}/${this.stats.health}`);
-    
-    // Update the health bar fill
     if (healthFill) {
-      const percentage = Math.max(0, Math.min(100, (validHealth / this.stats.health) * 100));
+      const healthPercent = (this.health / this.stats.health) * 100;
       
-      // Force immediate style update without animation
-      healthFill.style.transition = 'none'; // Turn off transition temporarily
-      
-      // Update DOM directly and force a reflow
-      healthFill.style.width = `${percentage}%`;
+      // Force immediate update
+      healthFill.style.transition = 'none';
+      healthFill.style.width = `${healthPercent}%`;
       healthFill.offsetHeight; // Force reflow
       
-      // Set color based on health percentage
-      if (percentage > 60) {
-        healthFill.style.backgroundColor = '#2ecc71'; // Green for high health
-      } else if (percentage > 30) {
-        healthFill.style.backgroundColor = '#f39c12'; // Orange for medium health
+      // Update color based on health percentage
+      if (healthPercent > 60) {
+        healthFill.style.backgroundColor = '#2ecc71'; // Green
+      } else if (healthPercent > 30) {
+        healthFill.style.backgroundColor = '#f39c12'; // Orange
       } else {
-        healthFill.style.backgroundColor = '#e74c3c'; // Red for low health
+        healthFill.style.backgroundColor = '#e74c3c'; // Red
       }
       
-      // Restore transition after a brief delay
+      console.log(`Health bar updated: ${healthPercent}% width, health: ${this.health}/${this.stats.health}`);
+      
+      // Re-enable transition
       setTimeout(() => {
-        healthFill.style.transition = 'width 0.2s ease-out';
+        healthFill.style.transition = 'width 0.3s ease-out, background-color 0.3s ease-out';
       }, 50);
-      
-      console.log(`Health bar updated: ${percentage}% width, health: ${validHealth}/${this.stats.health}`);
-    } else {
-      console.error('CRITICAL ERROR: Health fill element not found in the DOM!');
-      // Try to recreate it
-      const healthBar = document.querySelector('.health-bar');
-      if (healthBar) {
-        console.log('Found health bar container, recreating health fill');
-        const newHealthFill = document.createElement('div');
-        newHealthFill.id = 'health-fill';
-        newHealthFill.className = 'health-fill';
-        healthBar.innerHTML = '';
-        healthBar.appendChild(newHealthFill);
-      }
     }
     
-    // Update the text display
     if (playerStats) {
-      playerStats.textContent = `Health: ${Math.round(validHealth)}/${this.stats.health}`;
+      playerStats.textContent = `Health: ${Math.round(this.health)}/${this.stats.health}`;
       console.log(`Player stats text updated to: ${playerStats.textContent}`);
-    } else {
-      console.error('CRITICAL ERROR: Player stats element not found in the DOM!');
     }
     
-    // Additional direct update to DOM for reliability
-    document.querySelectorAll('.health-fill').forEach(fill => {
-      const percentage = Math.max(0, Math.min(100, (validHealth / this.stats.health) * 100));
-      fill.style.width = `${percentage}%`;
+    // Update the health orb in the HUD
+    eventBus.emit('player.healthChanged', {
+      id: this.id,
+      health: this.health,
+      maxHealth: this.stats.health
     });
   }
 

@@ -52,11 +52,16 @@ class OtherPlayer extends Entity {
    * @returns {OtherPlayer} - This instance for chaining
    */
   init() {
+    console.log(`[OTHER_PLAYER] Initializing player ${this.id} with class ${this.classType}`);
+    
     // Initialize base entity
     super.init();
     
     // Create player mesh based on class
     this._createPlayerMesh();
+    
+    // Create health bar
+    this._createHealthBar();
     
     // Listen for movement updates from network
     eventBus.on(`network.playerMoved`, (data) => {
@@ -65,6 +70,106 @@ class OtherPlayer extends Entity {
       }
     });
     
+    // Listen for health updates from network
+    eventBus.on(`network.playerHealthChanged`, (data) => {
+      if (data.id === this.id && data.health !== undefined) {
+        console.log(`[OTHER_PLAYER] Health changed for ${this.id}: ${data.health}`);
+        this.health = data.health;
+        this._updateHealthBar();
+      }
+    });
+    
+    // Listen for death events from network
+    eventBus.on(`network.playerDied`, (data) => {
+      if (data.id === this.id) {
+        console.log(`[OTHER_PLAYER] Player ${this.id} died`);
+        if (this.mesh) {
+          this.mesh.visible = false;
+          if (this.healthBar) {
+            this.healthBar.visible = false;
+          }
+          this._showDeathEffect();
+        }
+      }
+    });
+    
+    // Listen for respawn events from network
+    eventBus.on(`network.playerRespawned`, (data) => {
+      if (data.id === this.id) {
+        console.log(`[OTHER_PLAYER] Player ${this.id} respawned`);
+        if (this.mesh) {
+          this.mesh.visible = true;
+          this.health = data.health || this.stats.health;
+          this._updateHealthBar();
+          
+          // Update position if provided
+          if (data.position) {
+            this.position.set(
+              data.position.x,
+              data.position.y,
+              data.position.z
+            );
+            this.targetPosition.copy(this.position);
+          }
+          
+          // Ensure health bar is visible
+          if (this.healthBar) {
+            this.healthBar.visible = true;
+          } else {
+            this._createHealthBar();
+          }
+        }
+      }
+    });
+    
+    // Also listen for entity-specific events (for compatibility)
+    eventBus.on(`entity.${this.id}.moved`, (data) => {
+      this._handlePlayerMoved(data);
+    });
+    
+    eventBus.on(`entity.${this.id}.healthChanged`, (data) => {
+      if (data.health !== undefined) {
+        this.health = data.health;
+        this._updateHealthBar();
+      }
+    });
+    
+    eventBus.on(`entity.${this.id}.died`, () => {
+      if (this.mesh) {
+        this.mesh.visible = false;
+        if (this.healthBar) {
+          this.healthBar.visible = false;
+        }
+        this._showDeathEffect();
+      }
+    });
+    
+    eventBus.on(`entity.${this.id}.respawned`, (data) => {
+      if (this.mesh) {
+        this.mesh.visible = true;
+        this.health = this.stats.health;
+        this._updateHealthBar();
+        
+        // Update position if provided
+        if (data.position) {
+          this.position.set(
+            data.position.x,
+            data.position.y,
+            data.position.z
+          );
+          this.targetPosition.copy(this.position);
+        }
+        
+        // Ensure health bar is visible
+        if (this.healthBar) {
+          this.healthBar.visible = true;
+        } else {
+          this._createHealthBar();
+        }
+      }
+    });
+    
+    console.log(`[OTHER_PLAYER] Player ${this.id} initialized successfully`);
     return this;
   }
 
@@ -73,6 +178,8 @@ class OtherPlayer extends Entity {
    * @private
    */
   _createPlayerMesh() {
+    console.log(`[OTHER_PLAYER] Creating mesh for player ${this.id} with class ${this.classType}`);
+    
     // Create player mesh (box for now)
     const geometry = new THREE.BoxGeometry(0.8, 1.6, 0.8);
     const material = new THREE.MeshStandardMaterial({ 
@@ -80,6 +187,29 @@ class OtherPlayer extends Entity {
     });
     
     this.createMesh(geometry, material);
+    
+    // Ensure mesh was created and is visible
+    if (this.mesh) {
+      console.log(`[OTHER_PLAYER] Mesh created successfully for player ${this.id}`);
+      this.mesh.visible = true;
+      
+      // Verify the mesh is in the scene
+      setTimeout(() => {
+        if (this.mesh.parent) {
+          console.log(`[OTHER_PLAYER] Mesh for player ${this.id} is in the scene`);
+        } else {
+          console.warn(`[OTHER_PLAYER] Mesh for player ${this.id} is NOT in the scene!`);
+          
+          // Try to add it to the scene if we have access to the renderer
+          if (window.game && window.game.renderer && window.game.renderer.scene) {
+            console.log(`[OTHER_PLAYER] Attempting to add mesh for player ${this.id} to scene`);
+            window.game.renderer.scene.add(this.mesh);
+          }
+        }
+      }, 100);
+    } else {
+      console.error(`[OTHER_PLAYER] Failed to create mesh for player ${this.id}`);
+    }
   }
 
   /**
@@ -88,7 +218,12 @@ class OtherPlayer extends Entity {
    * @private
    */
   _handlePlayerMoved(data) {
-    if (!data.position) return;
+    console.log(`[OTHER_PLAYER] Player ${this.id} moved to:`, data.position);
+    
+    if (!data.position) {
+      console.warn(`[OTHER_PLAYER] Invalid position data for player ${this.id}:`, data);
+      return;
+    }
     
     // Update target position
     this.targetPosition.set(
@@ -99,6 +234,20 @@ class OtherPlayer extends Entity {
     
     // Enable interpolation
     this.isInterpolating = true;
+    
+    // Ensure mesh is visible
+    if (this.mesh && !this.mesh.visible) {
+      console.log(`[OTHER_PLAYER] Making player ${this.id} visible after movement`);
+      this.mesh.visible = true;
+      
+      // Also make health bar visible if it exists
+      if (this.healthBar) {
+        this.healthBar.visible = true;
+      } else {
+        // Create health bar if it doesn't exist
+        this._createHealthBar();
+      }
+    }
   }
 
   /**
@@ -142,56 +291,75 @@ class OtherPlayer extends Entity {
     
     // Update health bar orientation to face camera
     if (this.healthBar && window.currentCamera) {
+      // Make health bar face camera
       this.healthBar.lookAt(window.currentCamera.position);
+      
+      // Ensure health bar visibility matches mesh visibility
+      if (this.mesh) {
+        this.healthBar.visible = this.mesh.visible;
+      }
+    } else if (this.mesh && this.mesh.visible && !this.healthBar) {
+      // Create health bar if it doesn't exist but should
+      console.log(`[OTHER_PLAYER] Creating missing health bar for visible player ${this.id}`);
+      this._createHealthBar();
     }
   }
 
   /**
    * Take damage
    * @param {number} amount - Amount of damage to take
-   * @returns {number} - Remaining health
+   * @param {boolean} fromNetwork - Whether this damage is from a network event
+   * @returns {boolean} - True if player died, false otherwise
    */
-  takeDamage(amount) {
+  takeDamage(amount, fromNetwork = false) {
     console.log(`[DAMAGE] OtherPlayer ${this.id} taking ${amount} damage. Current health: ${this.health}/${this.stats.health}`);
+    
+    // Skip if already dead
+    if (this.health <= 0) {
+      console.log(`[DAMAGE] OtherPlayer ${this.id} already dead, ignoring damage`);
+      return true;
+    }
+    
+    // Skip if amount is invalid
+    if (!amount || amount <= 0) {
+      console.log(`[DAMAGE] OtherPlayer ${this.id} invalid damage amount:`, amount);
+      return false;
+    }
     
     // Ensure health is a valid number
     if (typeof this.health !== 'number' || isNaN(this.health)) {
-      console.warn(`[DAMAGE] Invalid health value for ${this.id}: ${this.health}, resetting to max health`);
-      this.health = this.stats.health || 100;
+      console.warn(`[DAMAGE] OtherPlayer ${this.id} invalid health value, resetting to max health`);
+      this.health = this.stats.health;
     }
     
-    // Calculate original health percentage (for animation)
-    const originalHealthPercentage = this.health / this.stats.health;
+    // Ensure stats.health is valid based on class
+    if (!this.stats.health) {
+      console.warn(`[DAMAGE] OtherPlayer ${this.id} missing stats.health, using default values based on class`);
+      // Set default health values based on class
+      const defaultHealthByClass = {
+        'CLERK': 80,
+        'WARRIOR': 120,
+        'RANGER': 100
+      };
+      this.stats.health = defaultHealthByClass[this.classType] || 100;
+    }
+    
+    // Calculate original health
+    const oldHealth = this.health;
     
     // Apply damage
-    const oldHealth = this.health;
     this.health = Math.max(0, this.health - amount);
-    const newHealthPercentage = this.health / this.stats.health;
     
     console.log(`[DAMAGE] OtherPlayer ${this.id} health updated: ${oldHealth} -> ${this.health} (${amount} damage)`);
     
-    // Create or update health indicator above player
-    this._createHealthIndicator();
-    
-    // Animate health bar decrease
-    this._animateHealthDecrease(originalHealthPercentage, newHealthPercentage);
-    
-    // Flash the mesh red on damage
-    this._flashDamage();
-    
-    // Emit health change event
-    eventBus.emit(`entity.${this.id}.healthChanged`, {
-      entityId: this.id,
-      health: this.health,
-      maxHealth: this.stats.health
-    });
+    // Update health bar
+    this._updateHealthBar();
     
     // Check if player died
     if (this.health <= 0) {
       console.log(`[DEATH] OtherPlayer ${this.id} died from damage`);
-      eventBus.emit(`entity.${this.id}.died`, { entityId: this.id });
       
-      // Hide the mesh
+      // Hide player mesh
       if (this.mesh) {
         this.mesh.visible = false;
         console.log(`[DEATH] OtherPlayer ${this.id} mesh hidden`);
@@ -199,236 +367,140 @@ class OtherPlayer extends Entity {
       
       // Show death effect
       this._showDeathEffect();
+      
+      // Return true to indicate death
+      return true;
     }
     
-    return this.health;
+    // Return false to indicate player is still alive
+    return false;
   }
   
   /**
-   * Animate health decrease in the health bar
-   * @param {number} fromPercent - Starting health percentage
-   * @param {number} toPercent - Ending health percentage
+   * Update health bar
    * @private
    */
-  _animateHealthDecrease(fromPercent, toPercent) {
-    if (!this.healthBar) return;
+  _updateHealthBar() {
+    console.log(`Updating health bar for ${this.id}, health: ${this.health}/${this.stats.health}`);
     
-    // Get the health fill element (second child of health bar group)
-    const healthFill = this.healthBar.children[1];
-    if (!healthFill) return;
+    // Skip if no mesh
+    if (!this.mesh) {
+      return;
+    }
     
-    // Current scale
-    const startWidth = fromPercent * 0.96;
-    const endWidth = toPercent * 0.96;
+    // Create health bar if it doesn't exist
+    if (!this.healthBar) {
+      this._createHealthBar();
+    }
     
-    // Duration of animation in milliseconds
-    const duration = 500;
-    const startTime = Date.now();
-    
-    // Find the material to change color
-    const material = healthFill.material;
-    
-    // Store original color
-    const originalColor = material.color.clone();
-    
-    // Animation function
-    const animateHealth = () => {
-      const elapsed = Date.now() - startTime;
-      const progress = Math.min(elapsed / duration, 1);
+    // Update health bar fill
+    if (this.healthBarFill) {
+      const healthPercent = Math.max(0, Math.min(1, this.health / this.stats.health));
+      this.healthBarFill.scale.x = healthPercent;
       
-      // Calculate current width with easing
-      const easedProgress = 1 - Math.pow(1 - progress, 3); // Cubic ease-out
-      const currentWidth = startWidth + (endWidth - startWidth) * easedProgress;
-      
-      // Update health fill scale
-      if (healthFill.scale) {
-        healthFill.scale.setX(currentWidth / 0.96);
-      }
-      
-      // Update position to keep aligned to left
-      if (healthFill.position) {
-        healthFill.position.setX((currentWidth - 1) / 2);
-      }
-      
-      // Update health text if it exists (third child of health bar)
-      if (this.healthBar.children[2] && this.healthBar.children[2].material && this.healthBar.children[2].material.map) {
-        const currentHealth = Math.round(this.health);
-        const maxHealth = this.stats.health;
-        
-        // Update canvas texture
-        const canvas = document.createElement('canvas');
-        canvas.width = 64;
-        canvas.height = 32;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = 'white';
-        ctx.font = '16px Arial';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(`${currentHealth}/${maxHealth}`, 32, 16);
-        
-        // Apply to texture
-        const newTexture = new THREE.CanvasTexture(canvas);
-        this.healthBar.children[2].material.map.dispose();
-        this.healthBar.children[2].material.map = newTexture;
-        this.healthBar.children[2].material.needsUpdate = true;
-      }
-      
-      // Pulse red during damage
-      if (progress < 1) {
-        const pulseIntensity = (1 - progress) * 0.5;
-        material.color.setRGB(
-          originalColor.r + pulseIntensity,
-          originalColor.g * (1 - pulseIntensity),
-          originalColor.b * (1 - pulseIntensity)
-        );
-        
-        requestAnimationFrame(animateHealth);
-      } else {
-        // Reset to appropriate color based on health
-        this._updateHealthBarColor(toPercent);
-      }
-    };
-    
-    // Start animation
-    animateHealth();
+      // Update color based on health percentage
+      this._updateHealthBarColor(healthPercent);
+    }
   }
   
   /**
-   * Update health bar color based on percentage
+   * Update health bar color based on health percentage
    * @param {number} percentage - Health percentage (0-1)
    * @private
    */
   _updateHealthBarColor(percentage) {
-    if (!this.healthBar || !this.healthBar.children[1]) {
-      console.warn(`[HEALTH] Cannot update health bar color for ${this.id}: health bar not found`);
-      return;
-    }
-    
-    const material = this.healthBar.children[1].material;
-    if (!material) {
-      console.warn(`[HEALTH] Cannot update health bar color for ${this.id}: material not found`);
-      return;
-    }
-    
     console.log(`[HEALTH] Updating health bar color for ${this.id} with percentage ${percentage.toFixed(2)}`);
     
-    // Force material update
-    material.needsUpdate = true;
-    
-    if (percentage > 0.6) {
-      console.log(`[HEALTH] Setting health bar color to green for ${this.id}`);
-      material.color.set(0x2ecc71); // Green for high health
-    } else if (percentage > 0.3) {
-      console.log(`[HEALTH] Setting health bar color to orange for ${this.id}`);
-      material.color.set(0xf39c12); // Orange for medium health
-    } else {
-      console.log(`[HEALTH] Setting health bar color to red for ${this.id}`);
-      material.color.set(0xe74c3c); // Red for low health
+    if (!this.healthBarFill) {
+      return;
     }
     
-    // Ensure the color change is applied
-    material.needsUpdate = true;
+    // Set color based on health percentage
+    if (percentage > 0.6) {
+      console.log(`[HEALTH] Setting health bar color to green for ${this.id}`);
+      this.healthBarFill.material.color.setHex(0x2ecc71); // Green
+    } else if (percentage > 0.3) {
+      console.log(`[HEALTH] Setting health bar color to orange for ${this.id}`);
+      this.healthBarFill.material.color.setHex(0xf39c12); // Orange
+    } else {
+      console.log(`[HEALTH] Setting health bar color to red for ${this.id}`);
+      this.healthBarFill.material.color.setHex(0xe74c3c); // Red
+    }
   }
   
   /**
-   * Create a health indicator above the player
+   * Create health bar
    * @private
    */
-  _createHealthIndicator() {
-    if (!this.mesh) return;
+  _createHealthBar() {
+    if (!this.mesh) {
+      console.warn(`[HEALTH] Cannot create health bar for ${this.id}: mesh not found`);
+      return;
+    }
     
-    console.log(`Updating health bar for ${this.id}, health: ${this.health}/${this.stats.health}`);
-    
-    // Remove existing health indicator
+    // If health bar already exists, remove it first
     if (this.healthBar) {
+      console.log(`[HEALTH] Removing existing health bar for ${this.id}`);
       this.mesh.remove(this.healthBar);
+      this.healthBar = null;
+      this.healthBarFill = null;
     }
     
-    // Create background bar
-    const bgGeometry = new THREE.PlaneGeometry(1, 0.2);
-    const bgMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
-    const background = new THREE.Mesh(bgGeometry, bgMaterial);
+    console.log(`[HEALTH] Creating health bar for ${this.id}`);
     
-    // Create health fill - ensure valid numbers
-    const healthRatio = (this.health && this.stats.health) ? 
-                         (this.health / this.stats.health) : 0;
-    const fillWidth = Math.max(0.02, healthRatio * 0.96);
-    
-    // Ensure fillWidth is a valid number
-    const validFillWidth = isNaN(fillWidth) ? 0.02 : fillWidth;
-    
-    // Create health fill with base geometry
-    const fillGeometry = new THREE.PlaneGeometry(1, 0.16);
-    
-    // Determine color based on health percentage
-    let fillColor;
-    if (healthRatio > 0.6) {
-      fillColor = 0x2ecc71; // Green for high health
-    } else if (healthRatio > 0.3) {
-      fillColor = 0xf39c12; // Orange for medium health
-    } else {
-      fillColor = 0xe74c3c; // Red for low health
-    }
-    
-    const fillMaterial = new THREE.MeshBasicMaterial({ color: fillColor });
-    const fill = new THREE.Mesh(fillGeometry, fillMaterial);
-    
-    // Scale width to match health percentage (instead of creating a new geometry)
-    fill.scale.setX(validFillWidth);
-    
-    // Position to align left edge
-    fill.position.set((validFillWidth - 1) / 2, 0, 0.01);
-    
-    // Add text to show numeric health
-    const healthTextCanvas = document.createElement('canvas');
-    healthTextCanvas.width = 64;
-    healthTextCanvas.height = 32;
-    const ctx = healthTextCanvas.getContext('2d');
-    ctx.fillStyle = 'white';
-    ctx.font = '16px Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(`${Math.round(this.health)}/${this.stats.health}`, 32, 16);
-    
-    const healthTexture = new THREE.CanvasTexture(healthTextCanvas);
-    const healthTextGeometry = new THREE.PlaneGeometry(0.8, 0.2);
-    const healthTextMaterial = new THREE.MeshBasicMaterial({ 
-      map: healthTexture,
-      transparent: true,
-      depthTest: false
-    });
-    
-    const healthText = new THREE.Mesh(healthTextGeometry, healthTextMaterial);
-    healthText.position.set(0, -0.25, 0.01);
-    
-    // Create container
-    this.healthBar = new THREE.Group();
-    this.healthBar.add(background);
-    this.healthBar.add(fill);
-    this.healthBar.add(healthText);
+    // Create health bar container
+    const healthBarGroup = new THREE.Group();
+    healthBarGroup.name = `healthbar-${this.id}`;
     
     // Position above player
-    this.healthBar.position.set(0, 1.8, 0);
-    this.healthBar.rotation.copy(window.currentCamera.rotation);
+    healthBarGroup.position.set(0, 2.2, 0);
     
-    // Add to player mesh
-    this.mesh.add(this.healthBar);
+    // Create health bar background (black)
+    const backgroundGeometry = new THREE.PlaneGeometry(1, 0.15);
+    const backgroundMaterial = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: 0.5,
+      depthTest: false
+    });
+    const background = new THREE.Mesh(backgroundGeometry, backgroundMaterial);
+    healthBarGroup.add(background);
     
-    // Face the health bar to the camera
-    const updateOrientation = () => {
-      if (this.healthBar && window.currentCamera) {
-        // Make health bar face camera
-        const lookAt = new THREE.Vector3().copy(this.mesh.position);
-        lookAt.y += 2;
-        this.healthBar.lookAt(window.currentCamera.position);
-      }
-    };
+    // Create health bar fill (green)
+    const fillGeometry = new THREE.PlaneGeometry(1, 0.15);
+    const fillMaterial = new THREE.MeshBasicMaterial({
+      color: 0x2ecc71,
+      transparent: true,
+      opacity: 0.8,
+      depthTest: false
+    });
+    const fill = new THREE.Mesh(fillGeometry, fillMaterial);
     
-    // Update initially
-    updateOrientation();
+    // Position fill to align with left edge of background
+    fill.position.set(0, 0, 0.01);
     
-    // Set up event listener for camera updates
-    eventBus.on('camera.updated', updateOrientation);
+    // Set initial scale based on health
+    const healthPercent = Math.max(0, Math.min(1, this.health / this.stats.health));
+    fill.scale.x = healthPercent;
+    
+    // Add fill to group
+    healthBarGroup.add(fill);
+    this.healthBarFill = fill;
+    
+    // Add health bar to mesh
+    this.mesh.add(healthBarGroup);
+    this.healthBar = healthBarGroup;
+    
+    // Make health bar always face camera
+    healthBarGroup.userData.isBillboard = true;
+    
+    // Ensure health bar is visible if mesh is visible
+    healthBarGroup.visible = this.mesh.visible;
+    
+    // Update health bar color based on health percentage
+    this._updateHealthBarColor(healthPercent);
+    
+    console.log(`[HEALTH] Health bar created for ${this.id} with health ${this.health}/${this.stats.health} (${healthPercent * 100}%)`);
   }
   
   /**
@@ -536,7 +608,18 @@ class OtherPlayer extends Entity {
    */
   destroy() {
     // Remove event listeners
-    eventBus.off(`network.playerMoved`, this._boundHandlePlayerMoved);
+    eventBus.off(`entity.${this.id}.moved`);
+    eventBus.off(`entity.${this.id}.healthChanged`);
+    eventBus.off(`entity.${this.id}.died`);
+    eventBus.off(`entity.${this.id}.respawned`);
+    
+    // Also remove network event listeners
+    eventBus.off(`network.playerMoved`, (data) => data.id === this.id);
+    eventBus.off(`network.playerHealthChanged`, (data) => data.id === this.id);
+    eventBus.off(`network.playerDied`, (data) => data.id === this.id);
+    eventBus.off(`network.playerRespawned`, (data) => data.id === this.id);
+    
+    console.log(`[OTHER_PLAYER] Destroyed player ${this.id}`);
     
     // Call base entity destroy
     super.destroy();

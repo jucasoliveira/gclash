@@ -467,14 +467,14 @@ class Game {
    */
   async start(classType) {
     if (!classType && !this.selectedClass) {
-      console.error('No class selected');
+      console.error('[GAME] No class selected');
       return;
     }
     
     // Use provided class type or fallback to selected class
     const selectedClass = classType || this.selectedClass;
     
-    console.log(`Starting game with class: ${selectedClass}`);
+    console.log(`[GAME] Starting game with class: ${selectedClass}, mode: ${this.gameMode}`);
     
     // Hide character selection UI
     this._hideCharacterSelection();
@@ -482,8 +482,23 @@ class Game {
     // Show game UI
     this._showGameUI();
     
-    // Load appropriate map
-    await this._loadMap(this.gameMode);
+    // Ensure game mode is set
+    if (!this.gameMode) {
+      console.warn('[GAME] Game mode not set, defaulting to standard');
+      this.gameMode = 'standard';
+    }
+    
+    // Log the game mode for debugging
+    console.log(`[GAME] Game mode: ${this.gameMode}`);
+    
+    // Load appropriate map based on game mode
+    try {
+      console.log(`[GAME] Loading map for mode: ${this.gameMode}`);
+      await this._loadMap(this.gameMode);
+      console.log(`[GAME] Map loaded successfully for mode: ${this.gameMode}`);
+    } catch (error) {
+      console.error(`[GAME] Error loading map: ${error.message}`);
+    }
     
     // Set state to playing
     this.state = 'playing';
@@ -494,17 +509,17 @@ class Game {
     // Get class stats
     const classStats = CHARACTER_CLASSES[selectedClass];
     if (!classStats) {
-      console.error(`Invalid class type: ${selectedClass}`);
+      console.error(`[GAME] Invalid class type: ${selectedClass}`);
       return;
     }
     
     // Create player entity - use createPlayer instead of createEntity
-    console.log('Creating player entity...');
+    console.log('[GAME] Creating player entity...');
     this.player = entityManager.createPlayer(selectedClass, playerId);
     
     // Enable camera follow mode (Diablo-style)
     this.renderer.setFollowTarget(this.player, true);
-    console.log('Camera follow mode enabled - Diablo-style');
+    console.log('[GAME] Camera follow mode enabled - Diablo-style');
     
     // Start game systems
     this.isRunning = true;
@@ -520,106 +535,63 @@ class Game {
     loadingElement.style.color = 'white';
     loadingElement.style.fontSize = '24px';
     loadingElement.style.zIndex = '1000';
-    loadingElement.setAttribute('id', 'loading-element');
     document.body.appendChild(loadingElement);
     
-    if (!this.isInitialized) {
-      console.error('Game not initialized. Call init() first.');
-      return this;
-    }
-    
+    // Connect to server
     try {
-      // Connect to server with timeout
-      console.log('Connecting to server...');
       await webSocketManager.connect();
-      console.log('Connection successful');
-      const getLoadingElement = document.getElementById('loading-element');
-      if (getLoadingElement) {
-        getLoadingElement.remove();
-      }
-      // Wait for player ID assignment
-      if (!webSocketManager.playerId) {
-        console.log('Waiting for player ID assignment...');
-        await new Promise((resolve, reject) => {
-          // Set a timeout for ID assignment
-          const timeout = setTimeout(() => {
-            eventBus.off('network.idAssigned');
-            reject(new Error('Timeout waiting for player ID'));
-          }, 5000);
-          
-          // Listen for ID assignment
-          eventBus.once('network.idAssigned', (id) => {
-            console.log(`Player ID assigned: ${id}`);
-            clearTimeout(timeout);
-            resolve();
-          });
-        });
-      }
+      console.log('[GAME] Connected to server');
       
-      // Set player ID in the HUD
-      if (this.player && uiManager.components.hud) {
-        uiManager.components.hud.id = this.player.id;
-        console.log(`Game: Set player ID in HUD: ${this.player.id}`);
-      }
-      
-      // Listen for health changes on our own player
-      eventBus.on(`entity.${this.player.id}.healthChanged`, (data) => {
-        console.log(`Game received local player health change: ${data.health}/${data.maxHealth}`);
-        this.updateHealthUI(data.health, data.maxHealth);
-      });
-      
-      // Join the game with player data
-      console.log('Joining game with player data');
+      // Join game with player data
       webSocketManager.joinGame({
         position: this.player.position,
         class: selectedClass,
-        stats: this.player.stats,
-        type: 'player'
+        stats: classStats,
+        gameMode: this.gameMode
       });
       
-      // Listen for join failures
-      const joinFailureHandler = (data) => {
-        console.error('Failed to join game:', data.error);
-        eventBus.off('network.joinFailed', joinFailureHandler);
-        throw new Error('Failed to join game');
-      };
+      // Remove loading element
+      document.body.removeChild(loadingElement);
       
-      eventBus.once('network.joinFailed', joinFailureHandler);
+      // Set up event listeners
+      this._setupTournamentEventHandlers();
       
-      // Emit event
-      eventBus.emit('game.started');
+      // Set up health pickup handler
+      this._setupHealthPickupHandler();
       
-      // Explicitly show HUD
-      uiManager.showHUD();
+      // Set up tournament events if in tournament mode
+      if (this.gameMode === 'tournament') {
+        this._setupTournamentEvents();
+      }
       
-      // Remove the join failure handler
-      eventBus.off('network.joinFailed', joinFailureHandler);
+      // Set up battle royale events if in battle royale mode
+      if (this.gameMode === 'battleRoyale') {
+        this._setupBattleRoyaleEventHandlers();
+      }
+      
+      console.log('[GAME] Game started successfully');
+      
+      // Make game globally available for debugging
+      window.game = this;
+      
+      // Return the player entity
+      return this.player;
     } catch (error) {
-      console.error('Failed to start game:', error);
+      console.error('[GAME] Error connecting to server:', error);
       
-      // Clean up any partial initialization
-      if (this.player) {
-        entityManager.removeEntity(this.player.id);
-        this.player = null;
-      }
+      // Show error message
+      loadingElement.textContent = 'Error connecting to server. Please try again.';
+      loadingElement.style.color = 'red';
       
-      // Disconnect from server if connected
-      if (webSocketManager.connected) {
-        webSocketManager.disconnect();
-      }
+      // Remove loading element after a delay
+      setTimeout(() => {
+        if (document.body.contains(loadingElement)) {
+          document.body.removeChild(loadingElement);
+        }
+      }, 3000);
       
-      // Update state
-      this.state = 'characterSelection';
-      this.isRunning = false;
-      
-      // Show error to user
-      alert(`Failed to connect to server: ${error.message || 'Unknown error'}. Please try again.`);
-      
-      // Show character selection again
-      this._showCharacterSelection();
+      return null;
     }
-    
-    return this;
   }
 
   /**
@@ -915,36 +887,119 @@ class Game {
   }
 
   /**
-   * Load the appropriate map based on game mode
-   * @param {string} mode - Game mode ('standard' or 'tournament' or 'battleRoyale')
+   * Load the appropriate map for the given game mode
+   * @param {string} mode - Game mode (standard, tournament, battleRoyale)
+   * @returns {Promise} - Promise that resolves when map is loaded
    * @private
    */
   _loadMap(mode = 'standard') {
-    // Clean up existing map if any
-    if (this.currentMap) {
-      if (this.currentMap === grid) {
-        grid.dispose();
-      } else if (this.currentMap === tournamentMap) {
-        tournamentMap.dispose();
-      } else if (this.currentMap === battleRoyaleMap) {
-        battleRoyaleMap.dispose();
+    return new Promise((resolve, reject) => {
+      try {
+        console.log(`[MAP] Loading map for mode: ${mode}`);
+        
+        // Store the game mode
+        this.gameMode = mode;
+        
+        // Clean up existing map if any
+        if (this.currentMap) {
+          console.log(`[MAP] Disposing of current map: ${this.currentMap === grid ? 'grid' : 
+                                                        this.currentMap === tournamentMap ? 'tournament' : 
+                                                        this.currentMap === battleRoyaleMap ? 'battle royale' : 'unknown'}`);
+          try {
+            if (this.currentMap === grid) {
+              grid.dispose();
+            } else if (this.currentMap === tournamentMap) {
+              tournamentMap.dispose();
+            } else if (this.currentMap === battleRoyaleMap) {
+              battleRoyaleMap.dispose();
+            }
+          } catch (error) {
+            console.error(`[MAP] Error disposing current map: ${error.message}`);
+          }
+        }
+        
+        // Load the appropriate map
+        if (mode === 'tournament') {
+          console.log('[MAP] Initializing tournament map...');
+          
+          // Set up event listener for map ready
+          const onMapReady = () => {
+            console.log('[MAP] Tournament map ready event received');
+            eventBus.off('tournamentMap.ready', onMapReady);
+            this.currentMap = tournamentMap;
+            console.log('[MAP] Tournament map loaded successfully');
+            
+            // Emit map loaded event
+            eventBus.emit('map.loaded', { mode: mode, map: this.currentMap });
+            resolve();
+          };
+          
+          // Listen for map ready event
+          eventBus.once('tournamentMap.ready', onMapReady);
+          
+          // Initialize tournament map
+          tournamentMap.init();
+          
+          // Set a timeout in case the ready event doesn't fire
+          setTimeout(() => {
+            if (this.currentMap !== tournamentMap) {
+              console.warn('[MAP] Tournament map ready event not received, resolving anyway');
+              eventBus.off('tournamentMap.ready', onMapReady);
+              this.currentMap = tournamentMap;
+              
+              // Emit map loaded event
+              eventBus.emit('map.loaded', { mode: mode, map: this.currentMap });
+              resolve();
+            }
+          }, 2000);
+        } else if (mode === 'battleRoyale') {
+          console.log('[MAP] Initializing battle royale map...');
+          
+          // Set up event listener for map ready
+          const onMapReady = () => {
+            console.log('[MAP] Battle royale map ready event received');
+            eventBus.off('battleRoyaleMap.ready', onMapReady);
+            this.currentMap = battleRoyaleMap;
+            console.log('[MAP] Battle royale map loaded successfully');
+            
+            // Emit map loaded event
+            eventBus.emit('map.loaded', { mode: mode, map: this.currentMap });
+            resolve();
+          };
+          
+          // Listen for map ready event
+          eventBus.once('battleRoyaleMap.ready', onMapReady);
+          
+          // Initialize battle royale map
+          battleRoyaleMap.init();
+          
+          // Set a timeout in case the ready event doesn't fire
+          setTimeout(() => {
+            if (this.currentMap !== battleRoyaleMap) {
+              console.warn('[MAP] Battle royale map ready event not received, resolving anyway');
+              eventBus.off('battleRoyaleMap.ready', onMapReady);
+              this.currentMap = battleRoyaleMap;
+              
+              // Emit map loaded event
+              eventBus.emit('map.loaded', { mode: mode, map: this.currentMap });
+              resolve();
+            }
+          }, 2000);
+        } else {
+          console.log('[MAP] Initializing standard grid map...');
+          grid.init();
+          this.currentMap = grid;
+          console.log('[MAP] Standard grid map loaded successfully');
+          
+          // Emit map loaded event
+          eventBus.emit('map.loaded', { mode: mode, map: this.currentMap });
+          resolve();
+        }
+      } catch (error) {
+        console.error(`[MAP] Error loading map for mode ${mode}: ${error.message}`);
+        reject(error);
       }
-    }
-    
-    // Load the appropriate map
-    if (mode === 'tournament') {
-      console.log('Loading tournament map...');
-      tournamentMap.init();
-      this.currentMap = tournamentMap;
-    } else if (mode === 'battleRoyale') {
-      console.log('Loading battle royale map...');
-      battleRoyaleMap.init();
-      this.currentMap = battleRoyaleMap;
-    } else {
-      console.log('Loading standard map...');
-      grid.init();
-      this.currentMap = grid;
-    }
+    });
   }
 
   /**

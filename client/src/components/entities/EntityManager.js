@@ -26,6 +26,8 @@ class EntityManager {
    * @returns {EntityManager} - This instance for chaining
    */
   init() {
+    console.log('[ENTITY MANAGER] Initializing and setting up event listeners');
+    
     // Set up network event listeners
     eventBus.on('network.existingPlayers', this._boundHandleExistingPlayers);
     eventBus.on('network.playerJoined', this._boundHandlePlayerJoined);
@@ -37,6 +39,8 @@ class EntityManager {
     eventBus.on('network.playerRespawned', this._handlePlayerRespawned.bind(this));
     eventBus.on('network.playerAttackMissed', this._handlePlayerAttackMissed.bind(this));
     
+    console.log('[ENTITY MANAGER] Network event listeners registered successfully');
+    
     // Set up render update cycle
     eventBus.on('renderer.beforeRender', this._boundUpdate);
     
@@ -44,6 +48,8 @@ class EntityManager {
     eventBus.on('combat.getTargets', this._handleGetTargets.bind(this));
     eventBus.on('combat.getEntity', this._handleGetEntity.bind(this));
     eventBus.on('combat.attackRequested', this._handleAttackRequested.bind(this));
+    
+    console.log('[ENTITY MANAGER] All event listeners registered');
     
     // Add direct player access event handler
     eventBus.on('entityManager.getPlayerByID', (data) => {
@@ -106,59 +112,435 @@ class EntityManager {
   }
 
   /**
-   * Handle existing players from server
-   * @param {Array} players - Array of player data from server
+   * Create an other player entity
+   * @param {Object} playerData - Player data from server
+   * @returns {OtherPlayer} - The created player entity
+   * @private
+   */
+  _createOtherPlayer(playerData) {
+    // Skip if no ID
+    if (!playerData.id) {
+      console.warn('[ENTITY] Cannot create other player: No ID provided', playerData);
+      return null;
+    }
+    
+    // Skip if this is our own player
+    if (playerData.id === window.webSocketManager?.playerId) {
+      console.log(`[ENTITY] Skipping creation of own player: ${playerData.id}`);
+      return null;
+    }
+    
+    console.log(`[ENTITY] Creating other player: ${playerData.id}`, playerData);
+    
+    // Check if player already exists
+    const existingPlayer = this.getEntity(playerData.id);
+    if (existingPlayer) {
+      console.log(`[ENTITY] Player ${playerData.id} already exists, updating position and health`);
+      
+      // Update position if provided
+      if (playerData.position) {
+        existingPlayer.position.set(
+          playerData.position.x || 0,
+          playerData.position.y || 0.8,
+          playerData.position.z || 0
+        );
+      }
+      
+      // Update health if provided and health bar exists
+      if (playerData.health !== undefined && existingPlayer._updateHealthBar) {
+        existingPlayer.health = playerData.health;
+        existingPlayer._updateHealthBar();
+      }
+      
+      return existingPlayer;
+    }
+    
+    // Ensure player has position data
+    if (!playerData.position) {
+      playerData.position = { x: 0, y: 0.8, z: 0 };
+      console.log(`[ENTITY] Added default position for player ${playerData.id}`);
+    }
+    
+    // Ensure player has class data
+    if (!playerData.class && playerData.characterClass) {
+      playerData.class = playerData.characterClass;
+    } else if (!playerData.characterClass && playerData.class) {
+      playerData.characterClass = playerData.class;
+    } else if (!playerData.class && !playerData.characterClass) {
+      playerData.class = 'WARRIOR';
+      playerData.characterClass = 'WARRIOR';
+      console.log(`[ENTITY] Added default class for player ${playerData.id}`);
+    }
+    
+    // Ensure player has stats data
+    if (!playerData.stats) {
+      // Default stats based on class
+      const classType = playerData.class || 'WARRIOR';
+      const defaultStats = {
+        'CLERK': {
+          id: 'CLERK',
+          name: 'Clerk',
+          color: 0x428CD5,
+          health: 80,
+          speed: 0.15,
+          description: 'High speed, lower health. Uses magic attacks.'
+        },
+        'WARRIOR': {
+          id: 'WARRIOR',
+          name: 'Warrior',
+          color: 0xD54242,
+          health: 120,
+          speed: 0.1,
+          description: 'High health, lower speed. Uses melee attacks.'
+        },
+        'RANGER': {
+          id: 'RANGER',
+          name: 'Ranger',
+          color: 0x42D54C,
+          health: 100,
+          speed: 0.125,
+          description: 'Balanced health and speed. Uses ranged attacks.'
+        }
+      };
+      
+      playerData.stats = defaultStats[classType] || defaultStats['WARRIOR'];
+      console.log(`[ENTITY] Added default stats for player ${playerData.id} based on class ${classType}`);
+    }
+    
+    // Ensure player has health data
+    if (playerData.stats && !playerData.health) {
+      playerData.health = playerData.stats.health;
+      console.log(`[ENTITY] Added health data for player ${playerData.id}: ${playerData.health}`);
+    }
+    
+    // Create new player entity
+    const otherPlayer = new OtherPlayer(playerData.id, playerData);
+    
+    // Initialize player
+    otherPlayer.init();
+    
+    // Set initial position
+    if (playerData.position) {
+      otherPlayer.position.set(
+        playerData.position.x || 0,
+        playerData.position.y || 0.8,
+        playerData.position.z || 0
+      );
+    }
+    
+    // Add to entity manager
+    this.addEntity(otherPlayer);
+    
+    // Add to scene - THIS WAS MISSING!
+    if (otherPlayer.mesh) {
+      console.log(`[ENTITY] Adding mesh for player ${playerData.id} to scene`);
+      renderer.addObject(`player-${otherPlayer.id}`, otherPlayer.mesh);
+      otherPlayer.mesh.visible = true;
+      console.log(`[ENTITY] Ensured player ${playerData.id} is visible`);
+    } else {
+      console.warn(`[ENTITY] Player ${playerData.id} has no mesh to add to scene`);
+    }
+    
+    // Emit event for other systems
+    eventBus.emit('entity.playerCreated', { 
+      id: playerData.id, 
+      type: 'otherPlayer',
+      class: playerData.class || playerData.characterClass
+    });
+    
+    return otherPlayer;
+  }
+
+  /**
+   * Handle existing players data from server
+   * @param {Array} players - Array of player data
    * @private
    */
   _handleExistingPlayers(players) {
-    // Create entities for each existing player
+    console.log('[ENTITY] Handling existing players:', players);
+    console.log('[ENTITY] Current player ID:', window.webSocketManager?.playerId);
+    
+    if (!Array.isArray(players) || players.length === 0) {
+      console.log('[ENTITY] No existing players to handle or invalid data format');
+      console.log('[ENTITY] Players type:', typeof players);
+      
+      if (players && typeof players === 'object') {
+        console.log('[ENTITY] Players keys:', Object.keys(players));
+      }
+      
+      return;
+    }
+    
+    // Track created players for debug
+    const createdPlayers = [];
+    
+    // Process each player
     players.forEach(playerData => {
-      this._createOtherPlayer(playerData);
+      // Skip if this is our own player
+      if (playerData.id === window.webSocketManager?.playerId) {
+        console.log(`[ENTITY] Skipping own player: ${playerData.id}`);
+        return;
+      }
+      
+      // Skip if player has no ID
+      if (!playerData.id) {
+        console.warn('[ENTITY] Player data missing ID, skipping:', playerData);
+        return;
+      }
+      
+      console.log(`[ENTITY] Processing existing player: ${playerData.id}`);
+      
+      // Ensure player has position data
+      if (!playerData.position) {
+        playerData.position = { x: 0, y: 0.8, z: 0 };
+        console.log(`[ENTITY] Added default position for player ${playerData.id}`);
+      }
+      
+      // Ensure player has class data
+      if (!playerData.class && playerData.characterClass) {
+        playerData.class = playerData.characterClass;
+      } else if (!playerData.characterClass && playerData.class) {
+        playerData.characterClass = playerData.class;
+      } else if (!playerData.class && !playerData.characterClass) {
+        playerData.class = 'WARRIOR';
+        playerData.characterClass = 'WARRIOR';
+        console.log(`[ENTITY] Added default class for player ${playerData.id}`);
+      }
+      
+      // Ensure player has stats data
+      if (!playerData.stats) {
+        // Default stats based on class
+        const classType = playerData.class || 'WARRIOR';
+        const defaultStats = {
+          'CLERK': {
+            id: 'CLERK',
+            name: 'Clerk',
+            color: 0x428CD5,
+            health: 80,
+            speed: 0.15,
+            description: 'High speed, lower health. Uses magic attacks.'
+          },
+          'WARRIOR': {
+            id: 'WARRIOR',
+            name: 'Warrior',
+            color: 0xD54242,
+            health: 120,
+            speed: 0.1,
+            description: 'High health, lower speed. Uses melee attacks.'
+          },
+          'RANGER': {
+            id: 'RANGER',
+            name: 'Ranger',
+            color: 0x42D54C,
+            health: 100,
+            speed: 0.125,
+            description: 'Balanced health and speed. Uses ranged attacks.'
+          }
+        };
+        
+        playerData.stats = defaultStats[classType] || defaultStats['WARRIOR'];
+        console.log(`[ENTITY] Added default stats for player ${playerData.id} based on class ${classType}`);
+      }
+      
+      // Ensure player has health data
+      if (playerData.stats && !playerData.health) {
+        playerData.health = playerData.stats.health;
+        console.log(`[ENTITY] Added health data for player ${playerData.id}: ${playerData.health}`);
+      }
+      
+      // Check if player already exists
+      const existingPlayer = this.getEntity(playerData.id);
+      if (existingPlayer) {
+        console.log(`[ENTITY] Player ${playerData.id} already exists, updating position and health`);
+        
+        // Update position if provided
+        if (playerData.position) {
+          existingPlayer.position.set(
+            playerData.position.x || 0,
+            playerData.position.y || 0.8,
+            playerData.position.z || 0
+          );
+        }
+        
+        // Update health if provided
+        if (playerData.health !== undefined) {
+          existingPlayer.health = playerData.health;
+          if (existingPlayer._updateHealthBar) {
+            existingPlayer._updateHealthBar();
+          }
+        }
+        
+        // Ensure the player is visible
+        if (existingPlayer.mesh) {
+          existingPlayer.mesh.visible = true;
+          console.log(`[ENTITY] Ensured existing player ${playerData.id} is visible`);
+        }
+        
+        createdPlayers.push(playerData.id + ' (updated)');
+      } else {
+        // Create the player entity
+        const otherPlayer = this._createOtherPlayer(playerData);
+        
+        if (otherPlayer) {
+          createdPlayers.push(playerData.id);
+          
+          // Ensure the player is visible
+          if (otherPlayer.mesh) {
+            otherPlayer.mesh.visible = true;
+            console.log(`[ENTITY] Ensured new player ${playerData.id} is visible`);
+          }
+        }
+      }
+    });
+    
+    console.log(`[ENTITY] Processed ${createdPlayers.length} other players: ${createdPlayers.join(', ')}`);
+    
+    // Emit event to notify that all existing players have been processed
+    eventBus.emit('entityManager.existingPlayersProcessed', {
+      count: createdPlayers.length,
+      ids: createdPlayers
     });
   }
 
   /**
-   * Handle new player joined event
+   * Handle player joined event
    * @param {Object} playerData - Player data from server
    * @private
    */
   _handlePlayerJoined(playerData) {
-    this._createOtherPlayer(playerData);
-  }
-
-  /**
-   * Create an other player entity
-   * @param {Object} playerData - Player data from server
-   * @returns {OtherPlayer} - Created entity
-   * @private
-   */
-  _createOtherPlayer(playerData) {
-    // Check if entity already exists
-    if (this.entities.has(playerData.id)) {
-      console.warn(`Entity already exists with ID ${playerData.id}`);
-      return this.entities.get(playerData.id);
+    console.log('[ENTITY] Player joined:', playerData);
+    
+    // Skip if no ID
+    if (!playerData.id) {
+      console.warn('[ENTITY] Player joined with no ID:', playerData);
+      return;
     }
     
-    // Ensure player data has health information
+    // Skip if this is our own player
+    if (playerData.id === window.webSocketManager?.playerId) {
+      console.log(`[ENTITY] Skipping own player join event: ${playerData.id}`);
+      return;
+    }
+    
+    // Ensure player has position data
+    if (!playerData.position) {
+      playerData.position = { x: 0, y: 0.8, z: 0 };
+      console.log(`[ENTITY] Added default position for player ${playerData.id}`);
+    }
+    
+    // Ensure player has class data
+    if (!playerData.class && playerData.characterClass) {
+      playerData.class = playerData.characterClass;
+    } else if (!playerData.characterClass && playerData.class) {
+      playerData.characterClass = playerData.class;
+    } else if (!playerData.class && !playerData.characterClass) {
+      playerData.class = 'WARRIOR';
+      playerData.characterClass = 'WARRIOR';
+      console.log(`[ENTITY] Added default class for player ${playerData.id}`);
+    }
+    
+    // Ensure player has stats data
+    if (!playerData.stats) {
+      // Default stats based on class
+      const classType = playerData.class || 'WARRIOR';
+      const defaultStats = {
+        'CLERK': {
+          id: 'CLERK',
+          name: 'Clerk',
+          color: 0x428CD5,
+          health: 80,
+          speed: 0.15,
+          description: 'High speed, lower health. Uses magic attacks.'
+        },
+        'WARRIOR': {
+          id: 'WARRIOR',
+          name: 'Warrior',
+          color: 0xD54242,
+          health: 120,
+          speed: 0.1,
+          description: 'High health, lower speed. Uses melee attacks.'
+        },
+        'RANGER': {
+          id: 'RANGER',
+          name: 'Ranger',
+          color: 0x42D54C,
+          health: 100,
+          speed: 0.125,
+          description: 'Balanced health and speed. Uses ranged attacks.'
+        }
+      };
+      
+      playerData.stats = defaultStats[classType] || defaultStats['WARRIOR'];
+      console.log(`[ENTITY] Added default stats for player ${playerData.id} based on class ${classType}`);
+    }
+    
+    // Ensure player has health data
     if (playerData.stats && !playerData.health) {
       playerData.health = playerData.stats.health;
+      console.log(`[ENTITY] Added health data for player ${playerData.id}: ${playerData.health}`);
     }
     
-    console.log(`Creating other player with data:`, playerData);
-    
-    // Create other player entity
-    const otherPlayer = new OtherPlayer(playerData.id, playerData);
-    otherPlayer.init();
-    
-    // Add to entities
-    this.addEntity(otherPlayer);
-    
-    // Add to scene
-    if (otherPlayer.mesh) {
-      renderer.addObject(`player-${otherPlayer.id}`, otherPlayer.mesh);
+    // Check if player already exists
+    const existingPlayer = this.getEntity(playerData.id);
+    if (existingPlayer) {
+      console.log(`[ENTITY] Player ${playerData.id} already exists, updating position and health`);
+      
+      // Update position if provided
+      if (playerData.position) {
+        existingPlayer.position.set(
+          playerData.position.x || 0,
+          playerData.position.y || 0.8,
+          playerData.position.z || 0
+        );
+      }
+      
+      // Update health if provided
+      if (playerData.health !== undefined) {
+        existingPlayer.health = playerData.health;
+        if (existingPlayer._updateHealthBar) {
+          existingPlayer._updateHealthBar();
+        }
+      }
+      
+      // Ensure the player is visible
+      if (existingPlayer.mesh) {
+        existingPlayer.mesh.visible = true;
+        console.log(`[ENTITY] Ensured existing player ${playerData.id} is visible`);
+      }
+      
+      // Emit event for other systems
+      eventBus.emit('entity.playerJoined', { 
+        id: playerData.id, 
+        type: 'otherPlayer',
+        class: playerData.class || playerData.characterClass
+      });
+      
+      return existingPlayer;
     }
     
-    return otherPlayer;
+    // Create the player entity
+    const otherPlayer = this._createOtherPlayer(playerData);
+    
+    if (otherPlayer) {
+      console.log(`[ENTITY] Created other player: ${playerData.id}`);
+      
+      // Ensure the player is visible
+      if (otherPlayer.mesh) {
+        otherPlayer.mesh.visible = true;
+        console.log(`[ENTITY] Ensured player ${playerData.id} is visible`);
+      }
+      
+      // Emit event for other systems
+      eventBus.emit('entity.playerJoined', { 
+        id: playerData.id, 
+        type: 'otherPlayer',
+        class: playerData.class || playerData.characterClass
+      });
+      
+      return otherPlayer;
+    }
+    
+    return null;
   }
 
   /**
@@ -323,189 +705,208 @@ class EntityManager {
   }
   
   /**
-   * Handle attack requested event from player
-   * @param {Object} data - Attack request data from player
+   * Handle attack request from player
+   * @param {Object} data - Attack data
    * @private
    */
   _handleAttackRequested(data) {
-    console.log(`Attack requested: Player ${data.attackerId} targeting ${data.targetId}`);
+    console.log('[ENTITY] Attack requested:', data);
     
-    // Find the attacker entity
+    // Get attacker entity
     const attacker = this.getEntity(data.attackerId);
-    if (!attacker) return;
+    if (!attacker) {
+      console.error(`[ENTITY] Attacker not found: ${data.attackerId}`);
+      return;
+    }
     
-    // Find the target entity
+    // Get target entity
     const target = this.getEntity(data.targetId);
-    if (!target) return;
+    if (!target) {
+      console.error(`[ENTITY] Target not found: ${data.targetId}`);
+      return;
+    }
     
-    // Show visual attack effect immediately (even though damage is not applied yet)
-    // This gives instant visual feedback to the player
-    this._showAttackEffectBetweenEntities(attacker, target, data);
+    // Prevent self-damage
+    if (data.attackerId === data.targetId) {
+      console.warn('[ENTITY] Prevented self-damage attempt');
+      return;
+    }
     
-    // IMPORTANT: No damage is applied here - we wait for server confirmation
-    console.log(`Attack visual effect shown - waiting for server to confirm damage`);
+    // Calculate distance between attacker and target
+    const distance = attacker.position.distanceTo(target.position);
+    
+    // Get attack range from data or default
+    const attackRange = data.range || 5;
+    
+    // Check if target is in range
+    if (distance > attackRange) {
+      console.log(`[ENTITY] Target out of range: ${distance.toFixed(2)} > ${attackRange}`);
+      
+      // Show missed attack effect
+      this._showMissedAttackEffect(attacker, target, {
+        ...data,
+        distance,
+        maxRange: attackRange
+      });
+      
+      // Notify attacker about miss
+      if (data.callback) {
+        data.callback({
+          success: false,
+          reason: 'Target out of range',
+          distance,
+          maxRange: attackRange
+        });
+      }
+      
+      return;
+    }
+    
+    // Process the attack
+    this._processAttackWithTarget(data);
   }
   
   /**
-   * Handle player attack event from network
+   * Handle player attacked event from network
    * @param {Object} data - Attack data from server
    * @private
    */
   _handlePlayerAttacked(data) {
-    console.log(`Received attack event: Player ${data.id} attacked ${data.targetId} for ${data.damage} damage`);
+    console.log('Received attack event:', `Player ${data.id} attacked ${data.targetId} for ${data.damage} damage`);
     
-    // Find the attacker entity
-    let attacker = this.getEntity(data.id);
-    if (!attacker) {
-      console.warn(`Attacker with ID ${data.id} not found, creating a placeholder for visual effects`);
-      
-      // Try to get attacker data from WebSocketManager's otherPlayers
-      let attackerData = null;
-      if (window.game && window.game.networkManager && window.game.networkManager.otherPlayers) {
-        attackerData = window.game.networkManager.otherPlayers[data.id];
-      }
-      
-      // Create a temporary placeholder attacker for visual effects
-      attacker = {
-        id: data.id,
-        position: attackerData?.position || { x: 0, y: 0, z: 0 },
-        classType: attackerData?.class || 'WARRIOR',
-        mesh: null
-      };
-    }
-    
-    // Find the target entity
-    let target = this.getEntity(data.targetId);
-    if (!target) {
-      console.warn(`Target with ID ${data.targetId} not found`);
-      
-      // Try to find the target using a direct lookup from all entities
-      console.log(`Attempting to find target ${data.targetId} using direct entity lookup...`);
-      this.entities.forEach((entity) => {
-        if (entity.id === data.targetId) {
-          target = entity;
-          console.log(`Found target ${data.targetId} using direct lookup`);
-        }
-      });
-      
-      // If still not found, try to get target data from WebSocketManager's otherPlayers
-      if (!target && window.game && window.game.networkManager && window.game.networkManager.otherPlayers) {
-        const targetData = window.game.networkManager.otherPlayers[data.targetId];
-        if (targetData) {
-          console.log(`Found target ${data.targetId} in WebSocketManager's otherPlayers`);
-          
-          // Create a temporary placeholder target for visual effects
-          target = {
-            id: data.targetId,
-            position: targetData.position || { x: 0, y: 0, z: 0 },
-            classType: targetData.class || 'WARRIOR',
-            mesh: null,
-            health: targetData.health || 100,
-            stats: targetData.stats || { health: 100 }
-          };
-        }
-      }
-      
-      if (!target) {
-        console.error(`Target ${data.targetId} not found even with fallback methods`);
-        return;
-      }
-    }
-    
-    // Process the attack with the found target
-    this._processAttackWithTarget(attacker, target, data);
-  }
-  
-  /**
-   * Process an attack with a valid target
-   * @param {Entity} attacker - The attacking entity
-   * @param {Entity} target - The target entity
-   * @param {Object} data - Attack data
-   * @private
-   */
-  _processAttackWithTarget(attacker, target, data) {
-    // Always show attack effect between attacker and target for visual feedback
-    this._showAttackEffectBetweenEntities(attacker, target, data);
-    
-    // Check if this is just for local visual feedback
+    // Skip processing if this is a local visual-only attack
     if (data.isLocalVisualOnly) {
-      console.log("This is a local visual-only attack event - not applying damage");
+      console.log('Skipping server processing for local visual-only attack');
       return;
     }
     
-    // Determine if attack should be processed (inRange !== false)
-    // This handles both explicitly true and undefined cases for backward compatibility
-    const shouldProcessAttack = data.inRange !== false;
+    // Get attacker entity
+    let attacker = this.getEntity(data.id);
     
-    // Only process damage if the attack is valid
-    if (shouldProcessAttack) {
-      console.log(`Processing attack damage - Attack is in range`);
+    // If attacker not found, create a placeholder for visual effects
+    if (!attacker) {
+      console.log(`Attacker with ID ${data.id} not found, creating a placeholder for visual effects`);
       
-      // If this is a warrior and they're the local player, grant mana bonus now
-      if (attacker === this.player && attacker.classType === 'WARRIOR') {
-        // Apply warrior mana gain on confirmed hit
-        const manaGain = attacker.manaUsage?.WARRIOR?.regenBonus?.onHit || 10;
-        attacker.mana = Math.min(attacker.maxMana, attacker.mana + manaGain);
-        console.log(`Warrior gained ${manaGain} mana from landing a confirmed hit. Current mana: ${attacker.mana.toFixed(1)}`);
-        if (typeof attacker._emitManaChange === 'function') {
-          attacker._emitManaChange();
-        }
+      // Try to get data from WebSocketManager's other players cache
+      let attackerData = null;
+      if (window.webSocketManager && window.webSocketManager.otherPlayers) {
+        attackerData = window.webSocketManager.otherPlayers[data.id];
       }
       
-      // Apply damage to target if it's not the local player
-      // (local player damage is handled by WebSocketManager and Game)
-      if (target !== this.player && typeof target.takeDamage === 'function') {
-        console.log(`Applying damage to non-local target: ${data.damage}`);
-        target.takeDamage(data.damage, true);
-        
-        // Create floating damage text
-        this._createDamageText(target.position, data.damage);
-      } else if (target === this.player) {
-        console.log(`Local player is the target - damage should be handled by WebSocketManager`);
-      } else {
-        console.warn(`Target entity doesn't have takeDamage method`);
-        
-        // DIRECT APPROACH: Just use the takeDamage method
-        if (typeof target.takeDamage === 'function') {
-          target.takeDamage(data.damage);
-        } else {
-          // Fallback for entities without takeDamage
-          console.warn(`Using fallback damage application for entity ${target.id}`);
-          
-          // Update health directly if possible
-          if (target.health !== undefined) {
-            const oldHealth = target.health;
-            target.health = Math.max(0, target.health - data.damage);
-            console.log(`Applied damage directly: ${oldHealth} -> ${target.health}`);
-            
-            // Update health bar if it exists
-            if (target.mesh) {
-              target.mesh.traverse(child => {
-                if (child.userData && child.userData.isHealthBar) {
-                  const healthPercent = target.health / target.stats.health;
-                  child.scale.x = Math.max(0.01, healthPercent);
-                  
-                  // Update color based on health percentage
-                  if (child.material) {
-                    if (healthPercent > 0.6) {
-                      child.material.color.setHex(0x00ff00); // Green
-                    } else if (healthPercent > 0.3) {
-                      child.material.color.setHex(0xffff00); // Yellow
-                    } else {
-                      child.material.color.setHex(0xff0000); // Red
-                    }
-                  }
-                }
-              });
-            }
-          }
+      // Create a placeholder object with minimal required properties
+      attacker = {
+        id: data.id,
+        type: 'otherPlayer',
+        position: attackerData?.position || { x: 0, y: 0.8, z: 0 },
+        classType: attackerData?.characterClass || attackerData?.class || 'WARRIOR',
+        characterClass: attackerData?.characterClass || attackerData?.class || 'WARRIOR'
+      };
+    }
+    
+    // Get target entity
+    let target = this.getEntity(data.targetId);
+    
+    // If target not found, try to find it using direct entity lookup
+    if (!target) {
+      console.log(`Target with ID ${data.targetId} not found`);
+      console.log(`Attempting to find target ${data.targetId} using direct entity lookup...`);
+      
+      // Try to find the entity by iterating through all entities
+      this.entities.forEach(entity => {
+        if (entity.id === data.targetId || (entity.networkId && entity.networkId === data.targetId)) {
+          target = entity;
         }
+      });
+      
+      // If still not found, check if it's the local player
+      if (!target && window.game && window.game.player && window.game.player.id === data.targetId) {
+        target = window.game.player;
+        console.log(`Found target as local player: ${data.targetId}`);
       }
+      
+      // If still not found, create a placeholder for visual effects
+      if (!target) {
+        console.log(`Target ${data.targetId} not found even with fallback methods`);
+        
+        // Try to get data from WebSocketManager's other players cache
+        let targetData = null;
+        if (window.webSocketManager && window.webSocketManager.otherPlayers) {
+          targetData = window.webSocketManager.otherPlayers[data.targetId];
+        }
+        
+        // Create a placeholder object with minimal required properties
+        target = {
+          id: data.targetId,
+          type: 'otherPlayer',
+          position: targetData?.position || { x: 0, y: 0.8, z: 0 },
+          classType: targetData?.characterClass || targetData?.class || 'WARRIOR',
+          characterClass: targetData?.characterClass || targetData?.class || 'WARRIOR'
+        };
+      }
+    }
+    
+    // Process the attack with the entities
+    this._processAttackWithTarget({
+      attackerId: data.id,
+      targetId: data.targetId,
+      damage: data.damage,
+      attackType: data.attackType,
+      attackId: data.attackId,
+      distance: data.distance,
+      attacker: attacker,
+      target: target
+    });
+  }
+  
+  /**
+   * Process attack with target
+   * @param {Object} attackData - Attack data
+   * @private
+   */
+  _processAttackWithTarget(attackData) {
+    console.log('[ENTITY] Processing attack with target:', attackData);
+    
+    const attacker = attackData.attacker;
+    const target = attackData.target;
+    
+    if (!attacker || !target) {
+      console.error('[ENTITY] Missing attacker or target for attack processing');
+      return;
+    }
+    
+    // Show attack effect between entities
+    this._showAttackEffectBetweenEntities(attacker, target, attackData);
+    
+    // Determine if this is a local player attack
+    const isLocalPlayerAttack = attacker.type === 'player' && attacker === this.player;
+    
+    if (isLocalPlayerAttack) {
+      console.log('[ENTITY] Local player attack - sending to server');
+      // Local player attacks are handled by the server
+      // We just show the visual effect here
+      return;
+    }
+    
+    // For non-player attacks (e.g., other players attacking), apply damage directly
+    console.log('[ENTITY] Non-player attack - applying damage directly');
+    
+    // Apply damage to target if it has takeDamage method
+    if (typeof target.takeDamage === 'function') {
+      const died = target.takeDamage(attackData.damage, true); // true = from network
+      console.log(`[ENTITY] Damage applied to ${target.id}: ${attackData.damage}, died: ${died}`);
     } else {
-      console.log(`Attack not processed - explicitly out of range`);
+      console.warn(`[ENTITY] Target ${target.id} does not have takeDamage method`);
       
-      // Show missed attack effect
-      this._showMissedAttackEffect(attacker, target, data);
+      // If target is the local player, try to apply damage through game.player
+      if (target.id === window.webSocketManager?.playerId && window.game?.player) {
+        console.log('[ENTITY] Applying damage to local player through game.player');
+        window.game.player.takeDamage(attackData.damage, true);
+      }
+    }
+    
+    // Create floating damage text
+    if (target.position) {
+      this._createDamageText(target.position, attackData.damage);
     }
   }
   
@@ -517,9 +918,58 @@ class EntityManager {
    * @private
    */
   _showAttackEffectBetweenEntities(attacker, target, data) {
+    // Safety check for entities
+    if (!attacker || !target) {
+      console.warn('[ENTITY] Cannot show attack effect: missing attacker or target');
+      return;
+    }
+    
+    // Get positions, handling both entity objects and placeholder objects
+    let startPos, endPos;
+    
+    // Get attacker position
+    if (attacker.position instanceof THREE.Vector3) {
+      startPos = attacker.position.clone();
+    } else if (attacker.position) {
+      // Convert plain object to Vector3
+      startPos = new THREE.Vector3(
+        attacker.position.x || 0,
+        attacker.position.y || 0.8,
+        attacker.position.z || 0
+      );
+    } else {
+      // Default position if none available
+      console.warn('[ENTITY] Attacker has no position, using default');
+      startPos = new THREE.Vector3(0, 0.8, 0);
+    }
+    
+    // Add height offset for better visual
+    startPos.y += 0.5;
+    
+    // Get target position
+    if (target.position instanceof THREE.Vector3) {
+      endPos = target.position.clone();
+    } else if (target.position) {
+      // Convert plain object to Vector3
+      endPos = new THREE.Vector3(
+        target.position.x || 0,
+        target.position.y || 0.8,
+        target.position.z || 0
+      );
+    } else {
+      // Default position if none available
+      console.warn('[ENTITY] Target has no position, using default');
+      endPos = new THREE.Vector3(0, 0.8, 0);
+    }
+    
+    // Add height offset for better visual
+    endPos.y += 0.5;
+    
+    console.log('[ENTITY] Attack effect from', startPos, 'to', endPos);
+    
     // Determine correct effect based on attacker class
     let geometry, material;
-    const attackerClass = attacker.classType || 'WARRIOR';
+    const attackerClass = attacker.classType || attacker.characterClass || 'WARRIOR';
     
     switch (attackerClass) {
       case 'CLERK':
@@ -565,7 +1015,6 @@ class EntityManager {
     const attackEffect = new THREE.Mesh(geometry, material);
     
     // Position initially at attacker
-    const startPos = attacker.position.clone().add(new THREE.Vector3(0, 0.5, 0));
     attackEffect.position.copy(startPos);
     
     // For melee attacks, rotate appropriately
@@ -573,12 +1022,12 @@ class EntityManager {
       attackEffect.position.copy(attacker.position.clone().add(new THREE.Vector3(0, 0.5, -0.5)));
       
       // Orient toward target
-      const direction = new THREE.Vector3().subVectors(target.position, attacker.position).normalize();
+      const direction = new THREE.Vector3().subVectors(endPos, startPos).normalize();
       const angle = Math.atan2(direction.x, direction.z);
       attackEffect.rotation.set(Math.PI/2, 0, angle);
     } else if (attackerClass === 'RANGER') {
       // Orient arrow toward target
-      const direction = new THREE.Vector3().subVectors(target.position, attacker.position).normalize();
+      const direction = new THREE.Vector3().subVectors(endPos, startPos).normalize();
       const arrowAngle = Math.atan2(direction.x, direction.z);
       attackEffect.rotation.set(Math.PI/2, 0, arrowAngle);
     }
@@ -588,9 +1037,8 @@ class EntityManager {
     
     // For ranged attacks, animate projectile
     if (attackerClass === 'CLERK' || attackerClass === 'RANGER') {
-      const targetPos = target.position.clone().add(new THREE.Vector3(0, 0.5, 0));
       const startTime = Date.now();
-      const distance = startPos.distanceTo(targetPos);
+      const distance = startPos.distanceTo(endPos);
       const duration = Math.min(0.5, distance * 0.1);
       
       const animateProjectile = () => {
@@ -599,7 +1047,7 @@ class EntityManager {
         
         if (progress < 1) {
           // Interpolate position
-          attackEffect.position.lerpVectors(startPos, targetPos, progress);
+          attackEffect.position.lerpVectors(startPos, endPos, progress);
           requestAnimationFrame(animateProjectile);
         }
       };
@@ -610,75 +1058,102 @@ class EntityManager {
   }
   
   /**
-   * Handle player health changed event from network
-   * @param {Object} data - Health data from server
+   * Handle player health changed event
+   * @param {Object} data - Health data
    * @private
    */
   _handlePlayerHealthChanged(data) {
-    console.log("Health change event received:", data);
+    console.log('Health change event received:', data);
     
-    // Find the entity by ID
-    const entity = this.getEntity(data.id);
-    if (!entity) {
-      console.warn(`Entity with ID ${data.id} not found for health change event`);
+    // Skip if no ID provided
+    if (!data.id) {
+      console.warn('Health change event missing ID');
       return;
     }
     
-    // Store old health for logging
-    const oldHealth = entity.health || 0;
-    const newHealth = data.health;
-    const damage = data.damage || (oldHealth > newHealth ? oldHealth - newHealth : 0);
+    // Get the entity
+    const entity = this.getEntity(data.id);
     
-    console.log(`Entity ${data.id} health update: ${oldHealth} -> ${newHealth} (damage: ${damage})`);
-    
-    // Handle local player health changes separately
-    if (entity === this.player) {
-      console.log("Received health change event for our player");
+    // If entity not found, check if it's the local player
+    if (!entity) {
+      console.log('Entity with ID', data.id, 'not found for health change event');
       
-      // Update player's health property
-      this.player.health = newHealth;
-      
-      // Use Game.js for health UI updates if available
-      if (window.game && typeof window.game.updateHealthUI === 'function') {
-        console.log(`EntityManager calling game.updateHealthUI with ${newHealth}/${this.player.stats.health}`);
-        window.game.updateHealthUI(newHealth, this.player.stats.health);
+      // Check if this is the local player's ID
+      if (window.webSocketManager && window.webSocketManager.playerId === data.id) {
+        console.log('Health change is for local player, applying directly');
         
-        // Dispatch a custom DOM event for any other listeners
-        const healthChangedEvent = new CustomEvent('player-health-changed', {
-          detail: {
-            id: this.player.id,
-            health: newHealth,
-            maxHealth: this.player.stats.health,
-            damage: damage
-          }
-        });
-        document.dispatchEvent(healthChangedEvent);
-      }
-      
-      // Update player's own UI method
-      if (typeof this.player._updateHealthUI === 'function') {
-        this.player._updateHealthUI();
-      }
-      
-      // Play damage effect if it was damage (not healing)
-      if (damage > 0 && typeof this.player._playDamageEffect === 'function') {
-        this.player._playDamageEffect();
-      }
-    } else {
-      // This is another player (not the local player)
-      console.log(`Applying damage to other player (${data.id}): ${damage}`);
-      
-      // DIRECT APPROACH: Just use the takeDamage method
-      if (typeof entity.takeDamage === 'function') {
-        entity.takeDamage(damage);
-      } else {
-        // Fallback for entities without takeDamage
-        entity.health = newHealth;
-        
-        // Create floating damage text
-        if (damage > 0) {
-          this._createDamageText(entity.position, damage);
+        // Apply damage to local player
+        if (window.game && window.game.player && typeof window.game.player.takeDamage === 'function') {
+          window.game.player.takeDamage(data.damage || 0, true);
+          return;
         }
+      }
+      
+      // Check if it's an other player that we know about
+      if (window.webSocketManager && window.webSocketManager.otherPlayers) {
+        const playerData = window.webSocketManager.otherPlayers[data.id];
+        if (playerData) {
+          console.log('Found player in network cache, updating health data');
+          
+          // Update the health in the cache
+          playerData.health = data.health;
+          playerData.maxHealth = data.maxHealth;
+          
+          // Try to find the entity again by iterating through all entities
+          // This is a fallback in case the entity exists but wasn't found by ID
+          let foundEntity = null;
+          this.entities.forEach(e => {
+            if (e.id === data.id || (e.networkId && e.networkId === data.id)) {
+              foundEntity = e;
+            }
+          });
+          
+          if (foundEntity) {
+            console.log('Found entity through direct iteration, applying health update');
+            if (typeof foundEntity.takeDamage === 'function') {
+              foundEntity.takeDamage(data.damage || 0, true);
+            }
+          }
+        }
+      }
+      
+      // If we still couldn't find the entity, just log and return
+      return;
+    }
+    
+    // Log the health change
+    console.log('Entity', data.id, 'health update:', entity.health, '->', data.health, '(damage:', data.damage, ')');
+    
+    // Apply the health change
+    if (entity.type === 'otherPlayer') {
+      console.log('Applying damage to other player (', entity.id, '):', data.damage);
+      
+      // Ensure maxHealth is set
+      if (data.maxHealth && !entity.stats?.health) {
+        entity.stats = entity.stats || {};
+        entity.stats.health = data.maxHealth;
+      }
+      
+      // Apply damage
+      if (typeof entity.takeDamage === 'function') {
+        entity.takeDamage(data.damage || 0, true);
+      } else {
+        console.warn('Entity', entity.id, 'does not have takeDamage method');
+        
+        // Direct health update as fallback
+        entity.health = data.health;
+      }
+    } else if (entity.type === 'player') {
+      console.log('Applying damage to local player:', data.damage);
+      
+      // Apply damage
+      if (typeof entity.takeDamage === 'function') {
+        entity.takeDamage(data.damage || 0, true);
+      } else {
+        console.warn('Local player does not have takeDamage method');
+        
+        // Direct health update as fallback
+        entity.health = data.health;
       }
     }
   }
@@ -1290,36 +1765,123 @@ class EntityManager {
   }
 
   /**
-   * Handle player movement from network
-   * @param {Object} data - Movement data {id, position}
+   * Handle player moved event
+   * @param {Object} data - Movement data
    * @private
    */
   _handlePlayerMoved(data) {
-    // Ignore if it's our own player (we handle our own movement)
-    if (this.player && data.id === this.player.id) {
+    // Skip if no ID or position
+    if (!data.id || !data.position) {
+      console.warn('[ENTITY] Invalid player movement data:', data);
       return;
     }
     
-    // Get the entity
-    const entity = this.getEntity(data.id);
-    if (entity) {
-      // Update position
-      entity.setPosition(data.position.x, data.position.y, data.position.z);
-    } else {
-      // If entity doesn't exist yet, create it
-      console.log(`Entity not found for movement update: ${data.id}, creating placeholder`);
-      
-      // Create a placeholder entity with minimal data
-      const placeholderData = {
-        id: data.id,
-        position: data.position,
-        class: 'WARRIOR', // Default class
-        stats: CHARACTER_CLASSES.WARRIOR,
-        type: 'otherPlayer'
-      };
-      
-      this._createOtherPlayer(placeholderData);
+    // Skip if this is our own player
+    if (data.id === window.webSocketManager?.playerId) {
+      return;
     }
+    
+    console.log(`[ENTITY] Player ${data.id} moved to:`, data.position);
+    
+    // Get the entity
+    let entity = this.getEntity(data.id);
+    
+    // If entity not found, try to create it
+    if (!entity) {
+      console.log(`[ENTITY] Entity not found for movement update: ${data.id}, creating placeholder`);
+      
+      // Try to get player data from WebSocketManager
+      let playerData = null;
+      if (window.webSocketManager && window.webSocketManager.otherPlayers) {
+        playerData = window.webSocketManager.otherPlayers[data.id];
+      }
+      
+      // If we have player data, create the entity
+      if (playerData) {
+        // Ensure position is updated
+        playerData.position = data.position;
+        
+        // Create the entity
+        entity = this._createOtherPlayer(playerData);
+        
+        if (entity) {
+          console.log(`[ENTITY] Created entity for player ${data.id} from movement data`);
+          
+          // Ensure the entity is visible
+          if (entity.mesh) {
+            console.log(`[ENTITY] Adding mesh for player ${data.id} to scene from movement data`);
+            renderer.addObject(`player-${entity.id}`, entity.mesh);
+            entity.mesh.visible = true;
+            console.log(`[ENTITY] Ensured new player ${data.id} is visible after creation from movement`);
+          }
+        }
+      } else {
+        // Create minimal player data
+        const minimalPlayerData = {
+          id: data.id,
+          position: data.position,
+          class: data.class || 'WARRIOR',
+          characterClass: data.characterClass || data.class || 'WARRIOR',
+          type: 'otherPlayer'
+        };
+        
+        // Create the entity
+        entity = this._createOtherPlayer(minimalPlayerData);
+        
+        if (entity) {
+          console.log(`[ENTITY] Created minimal entity for player ${data.id} from movement data`);
+          
+          // Ensure the entity is visible
+          if (entity.mesh) {
+            console.log(`[ENTITY] Adding mesh for player ${data.id} to scene from movement data`);
+            renderer.addObject(`player-${entity.id}`, entity.mesh);
+            entity.mesh.visible = true;
+            console.log(`[ENTITY] Ensured minimal player ${data.id} is visible after creation from movement`);
+          }
+        }
+      }
+    } else {
+      // Update position
+      entity.position.set(
+        data.position.x,
+        data.position.y,
+        data.position.z
+      );
+      
+      // Update target position if entity has it
+      if (entity.targetPosition) {
+        entity.targetPosition.set(
+          data.position.x,
+          data.position.y,
+          data.position.z
+        );
+      }
+      
+      // Enable interpolation if entity supports it
+      if (typeof entity.isInterpolating !== 'undefined') {
+        entity.isInterpolating = true;
+      }
+      
+      // Ensure the entity is visible
+      if (entity.mesh && !entity.mesh.visible) {
+        entity.mesh.visible = true;
+        console.log(`[ENTITY] Made player ${data.id} visible after movement update`);
+        
+        // Also make health bar visible if it exists
+        if (entity.healthBar) {
+          entity.healthBar.visible = true;
+        } else if (typeof entity._createHealthBar === 'function') {
+          // Create health bar if it doesn't exist
+          entity._createHealthBar();
+        }
+      }
+    }
+    
+    // Emit entity-specific moved event
+    eventBus.emit(`entity.${data.id}.moved`, {
+      id: data.id,
+      position: data.position
+    });
   }
 
   /**
