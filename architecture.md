@@ -2,285 +2,214 @@
 
 ## Overview
 
-This document outlines the component-based architecture for the Guild Clash client. The goal is to transform the current monolithic codebase into a modular, maintainable structure that's easier to extend and debug.
+This document outlines the component-based architecture for the Guild Clash client and server. The project implements a browser-based isometric multiplayer game using three.js, featuring 1v1 tournaments and a 40-player battle royale mode, with three character classes (Clerk, Warrior, Ranger) and a leaderboard system.
 
 ## Core Principles
 
-1. **Separation of Concerns**: Each component should have a single responsibility
-2. **Encapsulation**: Components should hide their internal implementation details
-3. **Reusability**: Code should be structured to maximize reuse
-4. **Testability**: Components should be designed to be easily testable
-5. **Event-Driven Communication**: Components should communicate via events rather than direct references
+1. **Separation of Concerns**: Each component has a single responsibility
+2. **Encapsulation**: Components hide their internal implementation details
+3. **Reusability**: Code is structured to maximize reuse
+4. **Testability**: Components are designed to be easily testable
+5. **Event-Driven Communication**: Components communicate via events rather than direct references
 
-## Component Structure
+## Project Structure
 
-### Project Organization
+The project is organized into client and server directories:
 
 ```
 .
-├── CLAUDE.md
-├── LICENSE
-├── PROGRESS.md
-├── README-character-system.md
-├── README.md
-├── architecture.md
-├── assets
-│   ├── Nature Kit (2.1).zip
-│   ├── envmap.hdr
-│   └── kenney_tower-defense-kit.zip
-├── client
-│   ├── bun.lockb
-│   ├── components.json
-│   ├── dist
-│   │   ├── assets
-│   │   │   ├── index-DAK_ymiZ.js
-│   │   │   ├── index-DAK_ymiZ.js.map
-│   │   │   └── index-QUcXaACN.css
-│   │   ├── battle-royale-test.html
-│   │   ├── game-logo.svg
-│   │   ├── index.html
-│   │   ├── parchment-texture.svg
-│   │   └── placeholder.svg
-│   ├── index.html
-│   ├── package-lock.json
-│   ├── package.json
-│   ├── public
-│   │   ├── battle-royale-test.html
-│   │   ├── game-logo.svg
-│   │   ├── parchment-texture.svg
-│   │   └── placeholder.svg
-│   ├── src
-│   │   ├── App.jsx
-│   │   ├── components
-│   │   │   ├── controls
-│   │   │   │   └── InputManager.js
-│   │   │   ├── core
-│   │   │   │   ├── EventBus.js
-│   │   │   │   ├── Game.js
-│   │   │   │   └── Renderer.js
-│   │   │   ├── entities
-│   │   │   │   ├── Entity.js
-│   │   │   │   ├── EntityManager.js
-│   │   │   │   ├── OtherPlayer.js
-│   │   │   │   └── Player.js
-│   │   │   ├── network
-│   │   │   │   ├── NetworkManager.js
-│   │   │   │   ├── WebRTCManager.js
-│   │   │   │   └── WebSocketManager.js
-│   │   │   ├── ui
-│   │   │   │   ├── BattleRoyaleNotification.js
-│   │   │   │   ├── HUD.js
-│   │   │   │   ├── TournamentBracket.js
-│   │   │   │   ├── UIManager.js
-│   │   │   │   └── buttton.jsx
-│   │   │   └── world
-│   │   │       ├── BattleRoyaleMap.js
-│   │   │       ├── Grid.js
-│   │   │       └── TournamentMap.js
-│   │   ├── config
-│   │   │   └── classes.js
-│   │   ├── context
-│   │   ├── game
-│   │   │   ├── GameCanvas.jsx
-│   │   │   └── GameUtils.js
-│   │   ├── lib
-│   │   │   └── utils.js
-│   │   ├── main.js
-│   │   ├── main.jsx
-│   │   ├── pages
-│   │   │   ├── CharacterSelection.jsx
-│   │   │   ├── LandingPage.jsx
-│   │   │   ├── Lobby.jsx
-│   │   │   ├── Login.jsx
-│   │   │   ├── Register.jsx
-│   │   │   └── Settings.jsx
-│   │   ├── styles
-│   │   │   ├── README.md
-│   │   │   ├── index.css
-│   │   │   └── medieval-ui.css
-│   │   ├── test
-│   │   └── webrtc-polyfills.js
-│   ├── tailwind.config.js
-│   └── vite.config.js
-├── docs
-│   ├── character-system.md
-│   ├── map-system.md
-│   ├── tournament-battle-royale-integration.md
-│   ├── tournament-system.md
-│   └── websocket-protocol.md
-├── global_rules.md
-└── server
-    ├── bun.lockb
-    ├── models
-    │   ├── BattleRoyale.js
-    │   ├── Player.js
-    │   ├── Tournament.js
-    │   ├── TournamentWinner.js
-    │   └── index.js
-    ├── package-lock.json
-    ├── package.json
-    ├── server.js
-    ├── testApi.js
-    ├── testBattleRoyaleTrigger.js
-    ├── testDb.js
-    └── utils
-        └── battleRoyaleManager.js
+├── client/                      # Frontend React application
+│   ├── public/                  # Static assets
+│   ├── src/                     # Source code
+│   │   ├── components/          # Game components
+│   │   │   ├── controls/        # Input handling
+│   │   │   ├── core/            # Core game systems
+│   │   │   ├── entities/        # Game entities
+│   │   │   ├── network/         # Network communication
+│   │   │   ├── ui/              # User interface
+│   │   │   └── world/           # World and map systems
+│   │   ├── config/              # Game configuration
+│   │   ├── context/             # React context providers
+│   │   ├── game/                # Game canvas and utilities
+│   │   ├── lib/                 # Utility functions
+│   │   ├── pages/               # React pages
+│   │   └── styles/              # CSS styles
+│   └── vite.config.js           # Vite configuration
+├── server/                      # Backend Node.js server
+│   ├── models/                  # MongoDB models
+│   ├── utils/                   # Server utilities
+│   └── server.js                # Main server entry point
+├── assets/                      # Game assets (textures, models)
+└── docs/                        # Documentation
 ```
 
-## Component Descriptions
+## Client Component Architecture
 
 ### Core Components
 
 #### Game.js
 
-- Initializes and coordinates all game systems
-- Manages the game loop
-- Handles game state transitions
-- Acts as the entry point for the game systems
-- Coordinates tournament creation, joining, and management
+- Acts as the central controller for the entire game
+- Manages game state (loading, character selection, gameplay, game over)
+- Coordinates all game systems and components
+- Handles initialization and setup of all game subsystems
+- Implements tournament and battle royale mode logic
+- Maintains references to other managers for direct access
+- Implements tournament creation, joining, and management
 - Handles tournament UI updates and player interactions
+
+```javascript
+// Simplified example from Game.js
+class Game {
+  constructor() {
+    this.isInitialized = false;
+    this.isRunning = false;
+    this.state = "idle"; // idle, loading, characterSelection, playing, gameover
+    this.selectedClass = null;
+
+    this.networkManager = webSocketManager;
+    this.entityManager = entityManager;
+    this.renderer = renderer;
+  }
+
+  init(canvas) {
+    // Initialize game systems
+    this.renderer.init(canvas);
+    this.networkManager.init();
+    this.entityManager.init();
+
+    // Setup event listeners
+    this._setupUIEvents();
+    this._setupNetworkEvents();
+
+    this.isInitialized = true;
+  }
+
+  // Other methods for game management
+}
+```
 
 #### Renderer.js
 
 - Handles three.js setup and rendering
-- Manages the render loop
-- Provides an API for adding/removing objects from the scene
-- Handles window resize events
+- Manages the scene, camera, and WebGL renderer
+- Implements the render loop with requestAnimationFrame
+- Provides API for adding/removing objects from the scene
+- Handles window resize events and maintains aspect ratio
+- Manages lighting, shadows, and post-processing effects
 
 #### EventBus.js
 
-- Implements a publisher/subscriber pattern
-- Allows components to communicate without direct references
-- Provides methods for emitting and listening to events
-- Facilitates tournament-related event communication
+- Implements a publisher/subscriber pattern for decoupled communication
+- Provides methods for registering, emitting, and removing event listeners
+- Facilitates communication between components without direct references
+- Enables tournament and battle royale event propagation across the system
 
 ### Controls Components
 
 #### InputManager.js
 
-- Captures keyboard and mouse input
-- Normalizes input across browsers
-- Emits input events for other systems to consume
-- Handles input configuration
+- Captures and normalizes keyboard and mouse input
+- Maps key presses to game actions
+- Emits events when input state changes
+- Handles input configuration and customization
+- Provides methods to check current input state
 
-#### PlayerController.js
-
-- Translates input events into player actions
-- Manages player movement controls (WASD)
-- Triggers character abilities
-
-#### CameraController.js
-
-- Handles camera positioning and movement (arrow keys)
-- Implements isometric camera settings
-- Manages camera target and transitions
-
-### World Components
-
-#### WorldManager.js
-
-- Creates and initializes the game world
-- Manages the scene layout
-- Coordinates world objects
-
-#### Grid.js
-
-- Implements the grid-based terrain system
-- Handles grid texture generation
-- Provides utilities for grid-based positioning
-
-#### ObjectManager.js
-
-- Manages non-player objects in the world
-- Handles object creation, updating, and removal
-- Maintains object collections by type
-
-### Entity Components
+### Entities Components
 
 #### Entity.js
 
-- Base class for all game entities
-- Handles common entity properties (position, rotation)
+- Base class for all game entities (players, objects, etc.)
+- Manages common entity properties (position, rotation, scale)
 - Provides life cycle methods (update, destroy)
+- Handles entity movement and collision
 
 #### Player.js
 
 - Extends Entity for the local player
-- Manages player state, stats, and abilities
-- Handles player-specific rendering
+- Manages player state, health, and abilities
+- Handles player-specific rendering and animation
+- Implements combat mechanics and character abilities
+- Processes input events for player movement and actions
 
 #### OtherPlayer.js
 
 - Extends Entity for networked players
-- Handles interpolation for smooth movement
-- Manages visual representation of other players
+- Implements client-side prediction and interpolation for smooth movement
+- Handles visual representation and health display for remote players
+- Updates position and state based on network messages
 
 #### EntityManager.js
 
-- Tracks all entities in the game
-- Provides methods to query entities
-- Handles entity creation and removal
+- Manages the creation, tracking, and removal of all game entities
+- Provides methods to query entities by type or ID
+- Handles entity collision detection and resolution
+- Coordinates entity updates during the game loop
+
+### Network Components
+
+#### WebSocketManager.js
+
+- Handles WebSocket connections to the server
+- Manages connection state, reconnection, and heartbeat
+- Implements message sending and receiving protocols
+- Processes game-specific messages (player movements, combat, etc.)
+- Handles tournament and battle royale related communications
+- Provides event handlers for network messages
+
+#### NetworkManager.js
+
+- Higher-level abstraction over WebSocketManager
+- Implements game-specific network protocols
+- Handles player synchronization and state updates
+- Manages connection quality and latency compensation
 
 ### UI Components
 
 #### UIManager.js
 
 - Manages all UI elements and screens
-- Handles UI transitions and state
+- Handles UI transitions and state changes
 - Coordinates UI input and events
+- Implements the in-game HUD and menus
+- Manages tournament UI and battle royale notifications
 
-#### CharacterSelect.js
+#### TournamentBracket.js
 
-- Implements the character selection UI
-- Handles class selection logic
-- Manages the start game button
+- Renders tournament brackets and match information
+- Updates bracket state based on tournament progress
+- Handles player selections and match results display
+- Provides visual feedback for current and upcoming matches
 
-#### GameUI.js
+#### BattleRoyaleNotification.js
 
-- Implements the in-game UI elements
-- Shows player health, stats, etc.
-- Displays game messages
+- Displays battle royale event notifications
+- Shows safe zone updates and player eliminations
+- Presents match results and winner information
+- Manages invitation UI for qualified players
 
-### Network Components
+### World Components
 
-#### NetworkManager.js
+#### Grid.js
 
-- Handles Socket.io connection and events
-- Manages connection state and reconnection
-- Provides an API for sending/receiving messages
+- Implements the grid-based terrain system
+- Handles grid texture generation and rendering
+- Provides utilities for grid-based positioning and pathfinding
+- Manages collision detection with terrain
 
-#### WebSocketManager.js
+#### TournamentMap.js
 
-- Manages WebSocket connections to the server
-- Handles message sending and receiving
-- Processes tournament-related messages
-- Manages player data synchronization
-- Implements message handler registration pattern
-- Provides tournament creation and joining functionality
-- Handles tournament state updates
+- Creates and manages the tournament arena map
+- Places obstacles and visual elements
+- Handles tournament-specific game mechanics
+- Manages spawn points and boundaries
 
-#### SyncManager.js
+#### BattleRoyaleMap.js
 
-- Synchronizes entity states across the network
-- Handles entity creation/removal for network events
-- Implements client-side prediction and reconciliation
-
-### Tournament Components
-
-#### TournamentManager.js
-
-- Manages tournament creation, joining, and state
-- Handles tournament player list updates
-- Coordinates tournament bracket generation
-- Manages tournament match scheduling and results
-- Provides tournament status updates
-
-#### TournamentUI.js
-
-- Implements tournament-specific UI elements
-- Displays tournament brackets and match information
-- Shows tournament player list and status
-- Provides tournament creation and joining interface
+- Implements the larger battle royale map
+- Manages the shrinking safe zone mechanics
+- Handles player spawn distribution
+- Coordinates environmental hazards and item spawns
 
 ## Server Architecture
 
@@ -288,92 +217,140 @@ This document outlines the component-based architecture for the Guild Clash clie
 
 #### server.js
 
-- Main entry point for the server
-- Sets up Express and WebSocket servers
-- Handles HTTP and WebSocket connections
-- Manages player connections and disconnections
-- Coordinates game state synchronization
-- Implements tournament creation and management
-
-#### Player Management
-
-- Tracks connected players and their states
-- Handles player authentication and data persistence
-- Manages player positions and actions
-- Synchronizes player data across clients
-- Tracks player tournament participation
-
-#### Tournament Management
-
-- Implements tournament creation and joining
-- Manages tournament state and player lists
-- Handles tournament bracket generation
-- Coordinates tournament matches and results
-- Provides tournament status updates to clients
-
-#### Battle Royale Management
-
-- Implements battle royale match creation and joining
-- Manages battle royale state and player lists
-- Handles safe zone shrinking and player elimination
-- Tracks player positions and combat
-- Determines match winners and updates player stats
+- Main entry point for the backend server
+- Configures Express and WebSocket servers
+- Handles MongoDB connection and error management
+- Implements WebSocket message handlers
+- Manages player connections and game state
+- Coordinates tournament and battle royale systems
 
 ### Database Components
 
-#### MongoDB Models
+#### Models
 
-- Player: Stores player data, stats, and authentication
-- Tournament: Tracks tournament data, brackets, and results
-- BattleRoyale: Manages battle royale match data and results
-- PlayerScore: Tracks player scores and leaderboard position
+- **Player.js**: Player data, authentication, and game statistics
+- **Tournament.js**: Tournament creation, brackets, and match results
+- **TournamentWinner.js**: Records of tournament winners and rewards
+- **BattleRoyale.js**: Battle royale match data and results
 
-#### Database Utilities
+### Utility Components
 
-- Connection management with error handling
-- Data validation and sanitization
-- Query optimization and indexing
-- Transaction management for critical operations
+#### battleRoyaleManager.js
 
-## Communication Protocols
+- Manages battle royale match creation and lifecycle
+- Implements the safe zone shrinking algorithm
+- Handles player elimination and match resolution
+- Coordinates battle royale rewards and statistics
 
-### WebSocket Messages
+## Communication Protocol
+
+The client and server communicate using WebSocket messages with the following structure:
+
+```javascript
+{
+  type: 'messageType',  // The type of message
+  data: {               // Message-specific data
+    // Properties depend on message type
+  }
+}
+```
+
+### Key Message Types
 
 #### Player Messages
 
-- join: Player joins the game with character data
-- playerMove: Player position update
-- playerAttack: Player attack action
-- playerHealth: Player health update
-- playerDied: Player death notification
+- `join`: Player joins the game with character data
+- `playerMove`: Player position update
+- `playerAttack`: Player attack action
+- `playerHealth`: Player health update
+- `playerDied`: Player death notification
 
 #### Tournament Messages
 
-- createTournament: Create a new tournament
-- joinTournament: Join an existing tournament
-- tournamentCreated: Tournament creation confirmation
-- tournamentJoined: Tournament join confirmation
-- tournamentUpdated: Tournament state update
-- newTournament: New tournament notification
-- activeTournaments: List of active tournaments
+- `createTournament`: Create a new tournament
+- `joinTournament`: Join an existing tournament
+- `tournamentCreated`: Tournament creation confirmation
+- `tournamentJoined`: Tournament join confirmation
+- `tournamentUpdated`: Tournament state update
+- `tournamentMatch`: Match start notification
+- `tournamentResult`: Match result update
 
 #### Battle Royale Messages
 
-- createBattleRoyale: Create a new battle royale match
-- joinBattleRoyale: Join an existing battle royale match
-- battleRoyaleCreated: Battle royale creation confirmation
-- battleRoyaleJoined: Battle royale join confirmation
-- battleRoyaleUpdated: Battle royale state update
-- safeZoneUpdate: Safe zone shrinking notification
-- playerEliminated: Player elimination notification
+- `battleRoyaleInvitation`: Invitation to join a battle royale match
+- `battleRoyaleJoined`: Confirmation of joining a battle royale
+- `safeZoneUpdate`: Safe zone shrinking notification
+- `playerEliminated`: Player elimination notification
+- `battleRoyaleEnded`: Match end with results
 
-## Implementation Strategy
+## Implementation Patterns
 
-1. Start by creating the core components (Game, Renderer, EventBus)
-2. Move existing functionality into appropriate components gradually
-3. Refactor code to use the EventBus for communication
-4. Implement new features using the component architecture
-5. Add tests for components as they're created
+### Singleton Pattern
+
+Many managers are implemented as singletons to ensure a single source of truth:
+
+```javascript
+// Example singleton pattern
+class EventBus {
+  constructor() {
+    if (EventBus.instance) {
+      return EventBus.instance;
+    }
+
+    this.events = {};
+    EventBus.instance = this;
+  }
+
+  // Methods
+}
+
+const eventBus = new EventBus();
+export default eventBus;
+```
+
+### Component Lifecycle
+
+Components follow a consistent lifecycle pattern:
+
+1. **Initialization**: `init()` method sets up the component
+2. **Update**: `update(deltaTime)` method called each frame
+3. **Cleanup**: `dispose()` method releases resources
+
+### Event-Driven Communication
+
+Components communicate through the EventBus:
+
+```javascript
+// Publisher
+eventBus.emit("player.moved", { id: playerId, position });
+
+// Subscriber
+eventBus.on("player.moved", (data) => {
+  // Handle the event
+});
+```
+
+## Performance Considerations
+
+1. **Render Optimization**: Use instanced meshes for similar objects
+2. **Network Traffic**: Minimize data transfer with delta compression
+3. **Asset Loading**: Implement asset preloading and progressive loading
+4. **Memory Management**: Properly dispose of three.js objects when not needed
+
+## Security Considerations
+
+1. **Input Validation**: Validate all client input on the server
+2. **Server Authority**: Server has final authority on game state
+3. **Anti-Cheat**: Implement basic movement and action validation
+4. **Rate Limiting**: Prevent spam attacks with rate limiting
+
+## Future Improvements
+
+1. **WebRTC Integration**: Implement peer-to-peer connections for lower latency
+2. **Asset Compression**: Optimize asset loading and reduce file sizes
+3. **Mobile Support**: Add responsive design and touch controls
+4. **Advanced Anti-Cheat**: Implement more sophisticated validation
+5. **Social Features**: Add friends, clans, and messaging systems
 
 ## Best Practices
 
@@ -387,93 +364,3 @@ This document outlines the component-based architecture for the Guild Clash clie
 8. Validate data on both client and server
 9. Implement proper error handling and reporting
 10. Use consistent message formats for client-server communication
-
-## Example Implementation
-
-```javascript
-// Example of the Player component
-import { Entity } from "./Entity.js";
-import { eventBus } from "../core/EventBus.js";
-
-export class Player extends Entity {
-  constructor(id, classType, stats) {
-    super();
-    this.id = id;
-    this.classType = classType;
-    this.stats = { ...stats };
-    this.mesh = null;
-
-    this._initMesh();
-    this._setupEventListeners();
-  }
-
-  _initMesh() {
-    const geometry = new THREE.BoxGeometry(0.8, 1.6, 0.8);
-    const material = new THREE.MeshStandardMaterial({
-      color: this.stats.color,
-    });
-    this.mesh = new THREE.Mesh(geometry, material);
-    this.mesh.castShadow = true;
-
-    // Set initial position
-    this.setPosition(2, 0.8, 2);
-  }
-
-  _setupEventListeners() {
-    eventBus.on("move.forward", () => this.moveForward());
-    eventBus.on("move.backward", () => this.moveBackward());
-    eventBus.on("move.left", () => this.moveLeft());
-    eventBus.on("move.right", () => this.moveRight());
-  }
-
-  setPosition(x, y, z) {
-    this.position.set(x, y, z);
-    this.mesh.position.set(x, y, z);
-    eventBus.emit("player.moved", { id: this.id, position: this.position });
-  }
-
-  moveForward() {
-    this.setPosition(
-      this.position.x,
-      this.position.y,
-      this.position.z - this.stats.speed
-    );
-  }
-
-  moveBackward() {
-    this.setPosition(
-      this.position.x,
-      this.position.y,
-      this.position.z + this.stats.speed
-    );
-  }
-
-  moveLeft() {
-    this.setPosition(
-      this.position.x - this.stats.speed,
-      this.position.y,
-      this.position.z
-    );
-  }
-
-  moveRight() {
-    this.setPosition(
-      this.position.x + this.stats.speed,
-      this.position.y,
-      this.position.z
-    );
-  }
-
-  update(deltaTime) {
-    // Any per-frame updates
-  }
-
-  destroy() {
-    // Cleanup resources
-    eventBus.off("move.forward");
-    eventBus.off("move.backward");
-    eventBus.off("move.left");
-    eventBus.off("move.right");
-  }
-}
-```
