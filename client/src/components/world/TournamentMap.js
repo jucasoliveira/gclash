@@ -52,7 +52,7 @@ class TournamentMap {
     this.walkableTileTypes = ['stone', 'dirt', 'grass', 'sand', 'dirt2']; 
     
     // Obstacle tile types that are not walkable
-    this.obstacleTypes = ['grass_with_tree', 'sand_with_stone'];
+    this.obstacleTypes = ['grass_with_tree']; // Removed 'sand_with_stone' to make stones walkable
   }
 
   /**
@@ -275,7 +275,7 @@ class TournamentMap {
       this.sandGeo = BufferGeometryUtils.mergeGeometries([geo, this.sandGeo]);
       if (Math.random() > 0.8) {
         this.stoneGeo = BufferGeometryUtils.mergeGeometries([this.stoneGeo, this.stone(height, position)]);
-        tileType = 'sand_with_stone'; // Mark tiles with stones as non-walkable
+        tileType = 'sand_with_stone'; // Still tracked as sand_with_stone but now walkable
       } else {
         tileType = 'sand';
       }
