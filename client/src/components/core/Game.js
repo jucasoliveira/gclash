@@ -51,6 +51,9 @@ class Game {
     if (this.isInitialized) return this;
     
     try {
+      // Initialize Rapier physics engine
+      this._initPhysics();
+      
       // Safe initialization of renderer
       if (this.renderer) {
         this.renderer.init(canvas);
@@ -146,6 +149,36 @@ class Game {
     }
     
     return this;
+  }
+
+  /**
+   * Initialize the Rapier physics engine and create the physics world
+   * @private
+   */
+  async _initPhysics() {
+    try {
+      console.log('[GAME] Initializing Rapier physics engine...');
+      
+      // Import Rapier
+      const RAPIER = await import('@dimforge/rapier3d');
+      
+      // Make RAPIER available globally
+      window.RAPIER = RAPIER;
+      
+      // Create physics world with gravity
+      const gravity = { x: 0.0, y: -9.81, z: 0.0 };
+      const world = new RAPIER.World(gravity);
+      
+      // Make physics world available globally
+      window.physicsWorld = world;
+      
+      // Store reference locally
+      this.physicsWorld = world;
+      
+      console.log('[GAME] Rapier physics engine initialized successfully');
+    } catch (error) {
+      console.error('[GAME] Error initializing Rapier physics engine:', error);
+    }
   }
 
   /**
@@ -873,6 +906,16 @@ class Game {
     
     // Stop game loop
     this.stop();
+    
+    // Clean up physics world
+    if (this.physicsWorld) {
+      // Destroy all colliders and rigid bodies
+      this.physicsWorld = null;
+      window.physicsWorld = null;
+    }
+    
+    // Clean up RAPIER reference
+    window.RAPIER = null;
     
     // Clean up systems
     entityManager.dispose();

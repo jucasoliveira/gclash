@@ -74,6 +74,9 @@ class TournamentMap {
     // Generate the hexagon-based terrain
     this.generateTerrain();
     
+    // Create Rapier physics for terrain
+    this.createPhysicsTerrain();
+    
     // Create water for the map boundary
     this.createWater();
     
@@ -85,6 +88,10 @@ class TournamentMap {
     
     // Create spotlights for tournament arena feel
     this.createSpotlights();
+    
+    // Expose physics debug toggle globally
+    window.togglePhysicsDebug = (visible) => this.togglePhysicsDebug(visible);
+    console.log('[TOURNAMENT MAP] Physics debug toggle exposed as window.togglePhysicsDebug(true/false)');
     
     // Emit event that map is ready
     console.log('[TOURNAMENT MAP] Tournament map initialization complete, emitting ready event');
@@ -520,6 +527,243 @@ class TournamentMap {
   }
 
   /**
+   * Create physics representation of the terrain using Rapier
+   */
+  createPhysicsTerrain() {
+    if (!window.RAPIER) {
+      console.warn('[TOURNAMENT MAP] Rapier physics not available, skipping physics terrain');
+      return;
+    }
+    
+    const RAPIER = window.RAPIER;
+    const world = window.physicsWorld; // Assuming you have a physics world accessible
+    
+    if (!world) {
+      console.warn('[TOURNAMENT MAP] Physics world not available, skipping physics terrain');
+      return;
+    }
+    
+    console.log('[TOURNAMENT MAP] Creating hex-based physics terrain...');
+    
+    // Create a static rigid body to hold all our tile colliders
+    const groundBodyDesc = RAPIER.RigidBodyDesc.fixed();
+    const groundBody = world.createRigidBody(groundBodyDesc);
+    
+    // Track all created colliders for debugging
+    const hexColliders = [];
+    let colliderCount = 0;
+    
+    // Iterate through all the stored tile types and create colliders for each
+    this.tileTypes.forEach((tileInfo, posKey) => {
+      // Skip tiles that are below water or have obstacles
+      if (tileInfo.height <= this.WATER_HEIGHT || this.obstacleTypes.includes(tileInfo.type)) {
+        return;
+      }
+      
+      const position = tileInfo.position;
+      
+      // Create a cylinder collider for this hex tile
+      // Use radius of 1 to match the hex tiles (same as in hexGeometry)
+      // Height should match the tile's height
+      const hexCollider = RAPIER.ColliderDesc.cylinder(tileInfo.height / 2, 1.0);
+      
+      // Position the collider at the tile's position
+      // Collider's y position should be at half height (center of cylinder)
+      hexCollider.setTranslation(
+        position.x,
+        tileInfo.height / 2,
+        position.z
+      );
+      
+      // Add the collider to the ground body
+      const colliderHandle = world.createCollider(hexCollider, groundBody.handle);
+      hexColliders.push({
+        handle: colliderHandle,
+        position: position,
+        height: tileInfo.height,
+        type: tileInfo.type
+      });
+      
+      colliderCount++;
+    });
+    
+    // 2. Create a cylinder wall for the circular boundary (keep this from the previous implementation)
+    const wallHeight = this.wallHeight || 3; // Use map's wall height or default to 3
+    const wallThickness = this.wallThickness || 0.5; // Use map's wall thickness or default to 0.5
+    
+    // Create a cylinder collider that matches the map radius
+    const wallCollider = RAPIER.ColliderDesc.cylinder(wallHeight / 2, this.mapRadius);
+    
+    // Position the wall to sit at the edge of the map with its bottom at ground level
+    wallCollider.setTranslation(0, wallHeight / 2, 0);
+    
+    // Add the wall collider to the same rigid body
+    const wallColliderHandle = world.createCollider(wallCollider, groundBody.handle);
+    
+    // Store reference to the physics body
+    this.terrainBody = groundBody;
+    
+    // Create visual representation of the hex colliders for debugging
+    this.createHexPhysicsVisualization(hexColliders);
+    
+    // Also create a visualization for the wall collider
+    this.createWallColliderVisualization(this.mapRadius, wallHeight, wallThickness);
+    
+    console.log(`[TOURNAMENT MAP] Physics terrain created with ${colliderCount} hex colliders and circular boundary`);
+  }
+
+  /**
+   * Create visualization for the hex-based physics terrain
+   * @param {Array} hexColliders - Array of hex collider information
+   */
+  createHexPhysicsVisualization(hexColliders) {
+    // Create a group to hold all hex debug geometries
+    const hexGroup = new THREE.Group();
+    
+    // Iterate through all hex colliders and create visual representation
+    hexColliders.forEach((collider, index) => {
+      // Create a cylinder geometry for each hex
+      const hexGeometry = new THREE.CylinderGeometry(
+        1.0,        // top radius
+        1.0,        // bottom radius
+        collider.height, // height
+        6,          // radial segments (6 for hexagon)
+        1,          // height segments
+        false       // open ended
+      );
+      
+      // Create a material based on tile type for better visualization
+      let color;
+      switch (collider.type) {
+        case 'stone': color = 0x888888; break;
+        case 'dirt': color = 0xA0522D; break;
+        case 'grass': color = 0x88FF88; break;
+        case 'sand': color = 0xF0E68C; break;
+        case 'dirt2': color = 0x8B4513; break;
+        default: color = 0xFF00FF; break;
+      }
+      
+      const material = new THREE.MeshBasicMaterial({
+        color: color,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.6
+      });
+      
+      // Create the mesh
+      const hexMesh = new THREE.Mesh(hexGeometry, material);
+      
+      // Position at the collider's position, with slight Y offset for visibility
+      hexMesh.position.set(
+        collider.position.x,
+        collider.position.y + 0.1, // 0.1 above actual terrain
+        collider.position.z
+      );
+      
+      // Add to the group
+      hexGroup.add(hexMesh);
+    });
+    
+    // Add the group to the scene
+    renderer.addObject('physicsHexGroup', hexGroup);
+    this.objects.push(hexGroup);
+    
+    // Create an overall red wireframe cylinder to show the walkable area boundary
+    const boundaryGeometry = new THREE.CylinderGeometry(
+      this.mapRadius - 0.2, // slightly smaller to avoid z-fighting
+      this.mapRadius - 0.2,
+      0.1, // very thin
+      32,  // circular, not hexagonal
+      1,
+      true // open ended
+    );
+    
+    const boundaryMaterial = new THREE.MeshBasicMaterial({
+      color: 0xff0000,
+      wireframe: true,
+      transparent: false
+    });
+    
+    const boundaryMesh = new THREE.Mesh(boundaryGeometry, boundaryMaterial);
+    boundaryMesh.position.y = 0.05; // Just above ground
+    
+    renderer.addObject('physicsBoundaryMesh', boundaryMesh);
+    this.objects.push(boundaryMesh);
+    
+    console.log('[TOURNAMENT MAP] Hex physics debug visualization created');
+  }
+
+  /**
+   * Create visualization for the wall collider
+   * @param {number} radius - Radius of the wall
+   * @param {number} height - Height of the wall
+   * @param {number} thickness - Thickness of the wall
+   */
+  createWallColliderVisualization(radius, height, thickness) {
+    // Create a cylinder geometry for the wall visualization
+    // Use a slightly larger radius for the outer wall to make it visible
+    const outerRadius = radius + thickness/2;
+    const innerRadius = radius - thickness/2;
+    
+    // Create a cylinder for the outer wall
+    const wallGeometry = new THREE.CylinderGeometry(
+      outerRadius, // top radius
+      outerRadius, // bottom radius
+      height,      // height
+      32,          // radial segments
+      1,           // height segments
+      true         // open-ended
+    );
+    
+    // Create a bright green material for the wall visualization
+    const wallMaterial = new THREE.MeshBasicMaterial({
+      color: 0x00ff00,  // Bright green
+      wireframe: true,
+      transparent: true,
+      opacity: 0.7,
+      side: THREE.DoubleSide
+    });
+    
+    // Create the mesh
+    const wallMesh = new THREE.Mesh(wallGeometry, wallMaterial);
+    
+    // Position it at the correct height (half height from ground)
+    wallMesh.position.y = height / 2;
+    
+    // Add to scene
+    renderer.addObject('physicsWallMesh', wallMesh);
+    
+    // Store for cleanup
+    this.objects.push(wallMesh);
+    
+    console.log('[TOURNAMENT MAP] Physics wall collider visualization created - GREEN CYLINDER');
+  }
+
+  /**
+   * Toggle the visibility of the physics debug visualization
+   * @param {boolean} visible - Whether the physics debug visualization should be visible
+   */
+  togglePhysicsDebug(visible) {
+    const hexGroup = renderer.getObjectByName('physicsHexGroup');
+    const boundaryMesh = renderer.getObjectByName('physicsBoundaryMesh');
+    const wallMesh = renderer.getObjectByName('physicsWallMesh');
+    
+    if (hexGroup) {
+      hexGroup.visible = visible;
+    }
+    
+    if (boundaryMesh) {
+      boundaryMesh.visible = visible;
+    }
+    
+    if (wallMesh) {
+      wallMesh.visible = visible;
+    }
+    
+    console.log(`[TOURNAMENT MAP] Physics debug visualization ${visible ? 'shown' : 'hidden'}`);
+  }
+
+  /**
    * Get obstacle objects for collision detection
    * @returns {Array} Array of obstacle objects
    */
@@ -574,6 +818,11 @@ class TournamentMap {
     renderer.removeObject('mapFloor');
     renderer.removeObject('tournamentAmbient');
     
+    // Remove physics debug visualization
+    renderer.removeObject('physicsHexGroup');
+    renderer.removeObject('physicsBoundaryMesh');
+    renderer.removeObject('physicsWallMesh');
+    
     // Clear arrays
     this.walls = [];
     this.obstacles = [];
@@ -589,6 +838,12 @@ class TournamentMap {
     
     // Dispose of environment map
     if (this.envMap) this.envMap.dispose();
+    
+    // Clean up physics
+    if (this.terrainBody && window.physicsWorld) {
+      window.physicsWorld.removeRigidBody(this.terrainBody);
+      this.terrainBody = null;
+    }
     
     // Clear references
     this.stoneGeo = null;
@@ -684,53 +939,8 @@ class TournamentMap {
           console.log(`[MAP] Position (${position.x.toFixed(2)}, ${position.z.toFixed(2)}) has no tile data but within map - assuming walkable`);
         }
         return true;
-      } else {
-        // Close to edge with no tile data - assume not walkable
-        if (Math.random() < 0.01) { // Throttle logging
-          console.log(`[MAP] Position (${position.x.toFixed(2)}, ${position.z.toFixed(2)}) has no tile data and near edge - assuming not walkable`);
-        }
-        return false;
       }
     }
-  }
-
-  /**
-   * Convert world position to tile coordinates
-   * @param {THREE.Vector3} position - World position
-   * @returns {Object} - Tile coordinates {x, y}
-   */
-  worldToTile(position) {
-    // This is an approximation - finding the exact hex tile from a position
-    // requires more complex math, but this should work for most cases
-    const x = position.x;
-    const z = position.z;
-    
-    // Convert to axial coordinates (approximate)
-    let q = x / 1.77;
-    let r = (z / 1.535) - (q / 2);
-    
-    // Round to nearest hex
-    let rx = Math.round(q);
-    let rz = Math.round(r);
-    
-    return { x: rx, y: rz };
-  }
-
-  /**
-   * Get the height at a specific world position
-   * @param {THREE.Vector3} position - World position
-   * @returns {number} - Height at the position
-   */
-  getHeightAt(position) {
-    const tileCoords = this.worldToTile(position);
-    const posKey = `${tileCoords.x},${tileCoords.y}`;
-    
-    if (this.tileTypes.has(posKey)) {
-      return this.tileTypes.get(posKey).height;
-    }
-    
-    // Default height if not found
-    return 0;
   }
 
   /**
@@ -921,6 +1131,90 @@ class TournamentMap {
         return false;
       }
     }
+  }
+
+  /**
+   * Get the height at a specific world position
+   * @param {THREE.Vector3} position - World position
+   * @returns {number} - Height at the position
+   */
+  getHeightAt(position) {
+    // This method is used by other components, so we keep it for compatibility
+    // It now simply calls our more robust getHeightAtPosition method
+    return this.getHeightAtPosition(position);
+  }
+
+  /**
+   * Get the height at a specific world position
+   * This is a more robust method for finding the terrain height
+   * @param {THREE.Vector3} worldPos - World position to check
+   * @returns {number} - Height at the position
+   */
+  getHeightAtPosition(worldPos) {
+    // Convert to tile coordinates
+    const tileCoords = this.worldToTile(worldPos);
+    
+    // Check direct match first
+    const exactPosKey = `${Math.round(tileCoords.x)},${Math.round(tileCoords.y)}`;
+    if (this.tileTypes.has(exactPosKey)) {
+      return this.tileTypes.get(exactPosKey).height;
+    }
+    
+    // If no direct hit, interpolate from surrounding tiles
+    return this.interpolateHeight(worldPos.x, worldPos.z);
+  }
+
+  /**
+   * Convert world position to tile coordinates
+   * @param {THREE.Vector3} worldPos - World position
+   * @returns {Object} - {x, y} tile coordinates
+   */
+  worldToTile(worldPos) {
+    // Inverse of tileToPosition function
+    const y = worldPos.z / 1.535;
+    const x = (worldPos.x / 1.77) - ((y % 2) * 0.5);
+    return { x, y };
+  }
+
+  /**
+   * Interpolate height at a position from surrounding tiles
+   * @param {number} x - World X coordinate
+   * @param {number} z - World Z coordinate
+   * @returns {number} - Interpolated height
+   */
+  interpolateHeight(x, z) {
+    // Get the closest tiles and sample their heights
+    const position = new THREE.Vector3(x, 0, z);
+    
+    // Sample a few nearby points
+    const sampleRadius = 1.0;
+    const samplePoints = 6;
+    let totalHeight = 0;
+    let sampleCount = 0;
+    
+    for (let i = 0; i < samplePoints; i++) {
+      const angle = (i / samplePoints) * Math.PI * 2;
+      const sampleX = x + Math.cos(angle) * sampleRadius;
+      const sampleZ = z + Math.sin(angle) * sampleRadius;
+      
+      const samplePos = new THREE.Vector3(sampleX, 0, sampleZ);
+      const tileCoords = this.worldToTile(samplePos);
+      const posKey = `${tileCoords.x},${tileCoords.y}`;
+      
+      if (this.tileTypes.has(posKey)) {
+        totalHeight += this.tileTypes.get(posKey).height;
+        sampleCount++;
+      }
+    }
+    
+    // If we found any samples, return the average
+    if (sampleCount > 0) {
+      return totalHeight / sampleCount;
+    }
+    
+    // Fallback: use simplex noise to generate a reasonable height
+    const noise = (this.noise2D(x * 0.1, z * 0.1) + 1) * 0.5;
+    return Math.pow(noise, 2) * this.MAX_HEIGHT;
   }
 }
 

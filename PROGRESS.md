@@ -1140,3 +1140,63 @@ Players were experiencing several issues with the walkable tile system:
 - Consider adding visual feedback for the transition between walkable and non-walkable areas
 - Implement more sophisticated pathfinding for complex obstacle navigation
 - Add terrain-specific effects (footsteps, dust, etc.) based on tile type
+
+## Physics Implementation
+
+### Hex-Based Physics Terrain
+
+**Status: ✅ Implemented Successfully**
+
+We've successfully implemented a physics representation that accurately matches the visual terrain in the game. The approach uses individual cylinder colliders for each hexagonal tile, which provides a much more precise collision system than the previous heightfield-based solution.
+
+### Key Improvements:
+
+1. **Individual Hex Colliders:**
+
+   - Each walkable tile now has its own cylinder-shaped collider
+   - Colliders match the exact shape, position, and height of their visual counterparts
+   - Only walkable tiles get colliders (those above water and without obstacles)
+
+2. **Color-Coded Debug Visualization:**
+
+   - Each physics collider has its own wireframe visualization
+   - Color-coded by terrain type for easier identification:
+     - Stone: Gray
+     - Dirt: Brown
+     - Grass: Light green
+     - Sand: Tan
+     - Dirt2: Dark brown
+   - Wireframes are positioned slightly above the actual terrain for visibility
+
+3. **Map Boundary:**
+
+   - Maintained the cylindrical wall collider for the map boundary
+   - Added a thin red wireframe cylinder to highlight the walkable boundary
+   - Green wireframe shows the actual collision wall
+
+4. **Toggle Functionality:**
+   - Added `window.togglePhysicsDebug(true/false)` global function
+   - Allows for easy showing/hiding of all physics debug visualizations
+   - Especially useful for debugging collision issues
+
+### Implementation Details:
+
+The implementation creates a single static rigid body that holds all the colliders, which is more efficient than creating individual rigid bodies for each tile. For each walkable tile, we:
+
+1. Create a cylinder collider with the same radius (1.0) as the visual hexagon
+2. Set the height to match the exact height of the tile
+3. Position it at the tile's world coordinates with Y at half-height
+4. Create an accompanying debug visualization mesh
+
+### Benefits:
+
+1. **Improved Accuracy:** Players will no longer "float" above the terrain or sink into it
+2. **Better Debugging:** Color-coding makes it easy to identify different terrain types
+3. **Precise Collisions:** More accurate collision detection for player movement and gameplay mechanics
+4. **Optimized Performance:** Only creates colliders for walkable tiles, reducing unnecessary physics calculations
+
+### Next Steps:
+
+- Monitor performance with large numbers of players
+- Potentially optimize further by using compound shapes for adjacent tiles of the same height
+- Add physics representations for obstacles (trees, stones)
