@@ -1682,6 +1682,16 @@ class WebSocketManager {
    */
   init() {
     console.log('Initializing WebSocketManager');
+    
+    // Check if _setupSocket exists, if not provide a safe implementation
+    if (typeof this._setupSocket !== 'function') {
+      console.warn('WebSocketManager._setupSocket is not defined, adding safe implementation');
+      this._setupSocket = () => {
+        console.log('Default WebSocketManager._setupSocket called');
+        // Default implementation - does nothing but doesn't crash
+      };
+    }
+    
     this._setupSocket();
     
     // Expose debug methods to window

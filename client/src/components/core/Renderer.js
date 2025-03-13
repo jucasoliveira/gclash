@@ -128,6 +128,11 @@ class Renderer {
    * @param {boolean} smooth - Whether to use smooth interpolation
    */
   updateCameraPosition(offset = { x: 0, y: 0 }, smooth = true) {
+    // If offset is a Vector3, extract x and z components
+    if (offset.x !== undefined && offset.z !== undefined) {
+      offset = { x: offset.x, y: offset.z };
+    }
+    
     // Classic isometric angle
     const isometricAngle = Math.PI / 4; // 45 degrees
     const elevationAngle = Math.atan(1 / Math.sqrt(2)); // ~35.264 degrees
@@ -144,20 +149,25 @@ class Renderer {
     const cameraOffsetY = distance * Math.sin(elevationAngle);
     
     // Target camera position (player position + fixed offset)
-    const targetX = offset.x + cameraOffsetX;
-    const targetZ = offset.y + cameraOffsetZ;
+    const targetX = offset.x - cameraOffsetX; // Reversed to place camera behind player
+    const targetZ = offset.y - cameraOffsetZ; // Reversed to place camera behind player
     const targetY = cameraOffsetY; // Keep Y at a fixed height
     
+    // Set isFollowingPlayer to true by default for proper player tracking
+    if (this.isFollowingPlayer === undefined) {
+      this.isFollowingPlayer = true;
+    }
+    
     // If smooth interpolation is enabled and we're following the player
-    if (smooth && this.isFollowingPlayer && this.camera.position.x !== undefined) {
-      // Interpolation factor (0.1 gives a nice smooth follow without being too slow)
-      const lerpFactor = 0.1;
+    if (smooth && this.isFollowingPlayer && this.camera && this.camera.position.x !== undefined) {
+      // Interpolation factor (adjusted for smoother following)
+      const lerpFactor = 0.05;
       
       // Interpolate camera position
-      this.camera.position.x += (targetX - this.camera.position.x) * lerpFactor;
-      this.camera.position.z += (targetZ - this.camera.position.z) * lerpFactor;
-      this.camera.position.y += (targetY - this.camera.position.y) * lerpFactor;
-    } else {
+      this.camera.position.x = this.camera.position.x + (targetX - this.camera.position.x) * lerpFactor;
+      this.camera.position.z = this.camera.position.z + (targetZ - this.camera.position.z) * lerpFactor;
+      this.camera.position.y = this.camera.position.y + (targetY - this.camera.position.y) * lerpFactor;
+    } else if (this.camera) {
       // Immediate positioning if not smooth or first positioning
       this.camera.position.x = targetX;
       this.camera.position.z = targetZ;
@@ -165,14 +175,19 @@ class Renderer {
     }
     
     // Always look at the player's position to keep them centered
-    const lookTarget = new THREE.Vector3(offset.x, 0, offset.y);
-    this.camera.lookAt(lookTarget);
-    
-    // Emit camera update event
-    eventBus.emit('camera.updated', {
-      position: this.camera.position.clone(),
-      target: lookTarget
-    });
+    if (this.camera) {
+      const lookTarget = new THREE.Vector3(offset.x, 0, offset.y);
+      this.camera.lookAt(lookTarget);
+      
+      // Make the current camera available to other components
+      window.currentCamera = this.camera;
+      
+      // Emit camera update event
+      eventBus.emit('camera.updated', {
+        position: this.camera.position.clone(),
+        target: lookTarget
+      });
+    }
   }
 
   /**

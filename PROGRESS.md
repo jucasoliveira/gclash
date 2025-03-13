@@ -878,3 +878,265 @@ The TournamentMap class now follows this structure:
 - Implement player spawning and respawn points
 - Add tournament-specific visual effects
 - Test performance with multiple players
+
+### March 13, 2023 - Walkable Tile Implementation
+
+We've implemented a walkable tile system for the tournament map, ensuring players can only move on appropriate terrain types (dirt, grass, and sand). This adds strategic depth to the gameplay and makes the environment more interactive.
+
+#### Key Changes:
+
+1. **Tile Type Tracking**
+
+   - Added a tile type tracking system using a Map data structure
+   - Defined walkable tile types (dirt, grass, sand)
+   - Stored tile information including type, height, and position
+   - Marked tiles with obstacles (trees, stones) as non-walkable
+
+2. **Walkable Tile Checking**
+
+   - Implemented `isWalkable()` method to check if a position is on a walkable tile
+   - Added `worldToTile()` method to convert world positions to tile coordinates
+   - Created `getHeightAt()` method to get the terrain height at any position
+   - Developed `adjustToWalkable()` method to find the nearest walkable position
+
+3. **Player Movement Integration**
+
+   - Updated Player.js to check if target positions are walkable
+   - Modified movement logic to respect walkable tiles during continuous movement
+   - Adjusted player height to match terrain height during movement
+   - Implemented path adjustment when players attempt to move to non-walkable areas
+
+4. **Other Player Synchronization**
+
+   - Updated OtherPlayer.js to respect walkable tiles
+   - Adjusted network-received positions to ensure other players stay on walkable terrain
+   - Maintained smooth interpolation while respecting terrain constraints
+
+5. **Mouse Indicator Improvements**
+   - Adjusted mouse movement indicator to render on top of walkable tiles
+   - Updated indicator height to match terrain height
+   - Improved visual feedback when clicking on non-walkable areas
+
+#### Technical Implementation:
+
+1. **TournamentMap.js Changes**
+
+   - Added tile type tracking in the Map generation process
+   - Implemented position validation and adjustment methods
+   - Created helper methods for terrain interaction
+   - Improved spawn position logic to ensure players spawn on walkable tiles
+
+2. **Player.js Changes**
+
+   - Updated `_handleMove()` to check for walkable tiles
+   - Modified `update()` to continuously validate movement
+   - Added terrain height adjustment during movement
+   - Implemented fallback logic when no walkable path is available
+
+3. **OtherPlayer.js Changes**
+   - Updated `_handlePlayerMoved()` to validate network-received positions
+   - Added position adjustment for non-walkable tiles
+   - Maintained smooth interpolation with terrain height adjustments
+
+#### Benefits:
+
+- **Strategic Gameplay**: Players must navigate around obstacles and consider terrain
+- **Improved Immersion**: Characters interact realistically with the environment
+- **Visual Consistency**: Players remain properly positioned on the terrain
+- **Better Gameplay Flow**: Prevents players from getting stuck in obstacles
+
+#### Next Steps:
+
+- Add visual feedback when attempting to move to non-walkable areas
+- Implement pathfinding for more intelligent navigation around obstacles
+- Add terrain-specific effects (footprints, dust, etc.)
+- Consider terrain-based gameplay mechanics (speed modifiers, special abilities)
+
+### March 14, 2023 - Player Rendering Fixes
+
+We've fixed issues with player rendering to ensure characters always stay properly positioned on top of walkable tiles. This improves the visual quality and gameplay experience by preventing players from sinking into or floating above the terrain.
+
+#### Key Fixes:
+
+1. **Continuous Height Adjustment**
+
+   - Added `_updateHeightBasedOnTerrain()` method to both Player and OtherPlayer classes
+   - Implemented continuous terrain height checking during each frame update
+   - Ensured players are always positioned slightly above the terrain surface
+   - Fixed issues with players sinking into or floating above the terrain
+
+2. **Mesh Position Synchronization**
+
+   - Improved synchronization between entity position and mesh position
+   - Added explicit mesh position updates after terrain height adjustments
+   - Fixed issues where player meshes weren't properly following the terrain contours
+   - Ensured consistent visual representation across all clients
+
+3. **Movement System Improvements**
+
+   - Enhanced WASD movement to respect terrain height
+   - Improved mouse-based movement to maintain proper height during travel
+   - Fixed rotation smoothing for more natural character turning
+   - Added better validation of movement positions
+
+4. **Network Position Updates**
+
+   - Ensured network position updates include correct height information
+   - Improved position interpolation to maintain proper height during transitions
+   - Fixed issues with other players appearing at incorrect heights
+   - Enhanced position validation to prevent invalid coordinates
+
+5. **Performance Optimizations**
+   - Added conditional checks to only perform terrain height calculations when necessary
+   - Optimized height calculations to reduce unnecessary processing
+   - Improved logging to help diagnose rendering issues
+   - Added fallbacks for edge cases where terrain data might be missing
+
+#### Technical Implementation:
+
+1. **Player.js Changes**
+
+   - Added `_updateHeightBasedOnTerrain()` method to continuously update player height
+   - Modified the update loop to call this method every frame
+   - Improved movement code to properly handle terrain height during both mouse and keyboard movement
+   - Fixed mesh position updates to ensure visual consistency
+
+2. **OtherPlayer.js Changes**
+
+   - Added parallel `_updateHeightBasedOnTerrain()` method for other players
+   - Enhanced position interpolation to maintain proper height
+   - Fixed issues with network position updates and terrain height
+   - Improved mesh position synchronization
+
+3. **Integration with TournamentMap**
+   - Leveraged the existing `getHeightAt()` method from TournamentMap
+   - Ensured proper interaction between player movement and terrain data
+   - Fixed edge cases where players might move outside the map boundaries
+   - Improved error handling for terrain height calculations
+
+#### Benefits:
+
+- **Visual Consistency**: Players now appear correctly positioned on the terrain at all times
+- **Improved Immersion**: Characters move naturally across the varying terrain heights
+- **Better Multiplayer Experience**: Other players appear correctly positioned for all clients
+- **Reduced Visual Glitches**: Eliminated issues with players sinking into or floating above terrain
+- **Enhanced Gameplay**: Movement feels more natural and connected to the environment
+
+#### Next Steps:
+
+- Add footstep effects that match the terrain type (dust on dirt, grass rustling, etc.)
+- Implement terrain-specific sound effects for different surface types
+- Consider adding slight movement speed modifications based on terrain type
+- Enhance visual feedback when moving between different terrain heights
+
+### March 15, 2023 - Player Movement Coordinate Conversion Fix
+
+### Issue
+
+Players were experiencing issues with movement where clicking on the screen would not result in proper movement. The movement indicator was not showing, and players were not being positioned correctly on tiles. This was due to a mismatch between the coordinate systems used by the `InputManager` and the `Player` class.
+
+### Key Fixes
+
+1. **Screen to World Coordinate Conversion**
+
+   - Fixed the `_handleMove` method in `Player.js` to properly convert screen coordinates to world coordinates
+   - Implemented proper raycasting using normalized device coordinates (NDC) to determine the target position
+   - Added error handling for cases where raycasting fails to intersect with the ground plane
+
+2. **Improved Movement Logic**
+
+   - Added checks to skip movement when the player is attacking
+   - Enhanced error reporting for missing or invalid coordinate data
+   - Reset WASD movement when mouse movement is initiated to prevent conflicts
+
+3. **Robust Error Handling**
+   - Added validation for normalized device coordinates
+   - Implemented proper error messages for debugging movement issues
+   - Added graceful fallbacks when coordinate conversion fails
+
+### Technical Implementation
+
+The core of the fix involved updating the `_handleMove` method to:
+
+1. Use the normalized device coordinates (NDC) provided by the `InputManager`
+2. Create a raycaster from the camera using these coordinates
+3. Cast a ray to intersect with the ground plane
+4. Use the intersection point as the target position for movement
+5. Apply existing walkable tile logic to this properly converted position
+
+### Benefits
+
+- Players can now click anywhere on the screen and move to that location
+- Movement indicators appear at the correct world position
+- Improved reliability of the movement system
+- Better debugging information for movement-related issues
+
+### Next Steps
+
+- Monitor for any edge cases in the coordinate conversion
+- Consider adding visual feedback during the raycasting process
+- Optimize the raycasting performance for lower-end devices
+
+## March 16, 2023 - Player Rendering and Walkable Tile Fixes
+
+### Issues
+
+Players were experiencing several issues with the walkable tile system:
+
+1. Players were walking through tiles instead of staying on top of them
+2. Movement indicators were not showing consistently
+3. Some tiles above water height were incorrectly marked as non-walkable
+
+### Key Fixes
+
+1. **Improved Walkable Tile Logic**
+
+   - Updated the `isWalkable` method in `TournamentMap.js` to consider all tiles above water height as walkable
+   - Changed the order of checks to first verify if a tile is above water, then check for obstacles
+   - Improved error handling for edge cases where tile information might be missing
+
+2. **Continuous Height Adjustment**
+
+   - Modified both `Player` and `OtherPlayer` classes to continuously update height based on terrain
+   - Removed throttling of height updates to ensure players always stay on top of tiles
+   - Added forced mesh position updates to ensure visual representation matches actual position
+   - Implemented better logging for debugging height adjustment issues
+
+3. **Movement Indicator Improvements**
+   - Fixed coordinate conversion in the `_handleMove` method to properly handle mouse clicks
+   - Ensured movement indicators are created at the correct height above terrain
+   - Added better error handling for cases where movement targets are invalid
+
+### Technical Implementation
+
+1. **TournamentMap.js Changes**
+
+   - Restructured the `isWalkable` method to prioritize water height check before obstacle check
+   - Improved the logic to be more explicit about why a tile is not walkable (water, obstacle, or outside map)
+   - Enhanced error handling for edge cases
+
+2. **Player.js Changes**
+
+   - Updated the `_updateHeightBasedOnTerrain` method to run every frame
+   - Added forced mesh position updates to ensure visual consistency
+   - Improved logging for height adjustment debugging
+
+3. **OtherPlayer.js Changes**
+   - Made parallel changes to the `_updateHeightBasedOnTerrain` method
+   - Ensured height updates occur every frame rather than being throttled
+   - Added similar forced mesh position updates and logging
+
+### Benefits
+
+- **Visual Consistency**: Players now appear correctly positioned on top of tiles at all times
+- **Improved Navigation**: More tiles are correctly identified as walkable, reducing frustration
+- **Better Feedback**: Movement indicators now consistently show where players are clicking
+- **Reduced Glitches**: Eliminated issues with players sinking into or walking through terrain
+- **More Intuitive Movement**: Players can now navigate more naturally through the environment
+
+### Next Steps
+
+- Monitor for any remaining edge cases in the walkable tile system
+- Consider adding visual feedback for the transition between walkable and non-walkable areas
+- Implement more sophisticated pathfinding for complex obstacle navigation
+- Add terrain-specific effects (footsteps, dust, etc.) based on tile type

@@ -43,85 +43,154 @@ function GameCanvas() {
     if (!isGameInitialized && canvasRef.current) {
       console.log('Initializing game with:', { characterClass, gameMode, tournament });
       
-      // Initialize the game with the canvas
-      game.init(canvasRef.current);
-      
-      // Set the game mode and load appropriate map
-      const initializeGameMode = async () => {
-        try {
-          // First, set the game mode
-          game.gameMode = gameMode;
-          console.log(`Setting game mode to: ${gameMode}`);
-          
-          // Convert to uppercase for compatibility with existing code
-          const classForGame = characterClass.toUpperCase();
-          console.log('Starting game with class:', classForGame);
-          
-          // Set the selected class
-          game.selectedClass = classForGame;
-          
-          // Explicitly load the map before starting the game
-          console.log(`Explicitly loading ${gameMode} map...`);
-          await game._loadMap(gameMode);
-          
-          // For tournament mode, set tournament data if available
-          if (gameMode === 'tournament' && tournament) {
-            game.currentTournamentId = tournament.id;
-            game.currentTournamentName = tournament.name;
-            console.log(`Set tournament data: ${tournament.id} - ${tournament.name}`);
+      try {
+        // Initialize the game with the canvas
+        game.init(canvasRef.current);
+        
+        // Set the game mode and load appropriate map
+        const initializeGameMode = async () => {
+          try {
+            // First, set the game mode
+            game.gameMode = gameMode;
+            console.log(`Setting game mode to: ${gameMode}`);
+            
+            // Convert to uppercase for compatibility with existing code
+            const classForGame = characterClass.toUpperCase();
+            console.log('Starting game with class:', classForGame);
+            
+            // Set the selected class
+            game.selectedClass = classForGame;
+            
+            // Explicitly load the map before starting the game
+            console.log(`Explicitly loading ${gameMode} map...`);
+            await game._loadMap(gameMode);
+            
+            // For tournament mode, set tournament data if available
+            if (gameMode === 'tournament' && tournament) {
+              game.currentTournamentId = tournament.id;
+              game.currentTournamentName = tournament.name;
+              console.log(`Set tournament data: ${tournament.id} - ${tournament.name}`);
+            }
+            
+            // Hide character selection UI (in case it's showing)
+            game._hideCharacterSelection();
+            
+            // Show game UI
+            game._showGameUI();
+            
+            // Set state to playing
+            game.state = 'playing';
+            
+            // Prevent double map loading by temporarily overriding the _loadMap method
+            const originalLoadMap = game._loadMap;
+            game._loadMap = function(mode) {
+              console.log(`Map loading skipped - already loaded ${gameMode} map`);
+              return Promise.resolve();
+            };
+            
+            // Start the game
+            await game.start(classForGame);
+            
+            // Restore original _loadMap function
+            game._loadMap = originalLoadMap;
+            
+            // Make game globally available for debugging
+            window.game = game;
+          } catch (error) {
+            console.error('Error initializing game mode:', error);
+            
+            // Display error message to user
+            const errorMessage = document.createElement('div');
+            errorMessage.style.position = 'absolute';
+            errorMessage.style.top = '50%';
+            errorMessage.style.left = '50%';
+            errorMessage.style.transform = 'translate(-50%, -50%)';
+            errorMessage.style.color = 'white';
+            errorMessage.style.backgroundColor = 'rgba(220, 53, 69, 0.8)';
+            errorMessage.style.padding = '20px';
+            errorMessage.style.borderRadius = '5px';
+            errorMessage.style.fontSize = '18px';
+            errorMessage.style.textAlign = 'center';
+            errorMessage.style.maxWidth = '80%';
+            errorMessage.innerHTML = `
+              <h3>Error Starting Game</h3>
+              <p>${error.message || 'Unknown error'}</p>
+              <button style="padding: 10px 20px; margin-top: 15px; cursor: pointer; background: #444; color: white; border: none; border-radius: 4px;">
+                Return to Lobby
+              </button>
+            `;
+            
+            // Add button event listener
+            const button = errorMessage.querySelector('button');
+            if (button) {
+              button.addEventListener('click', () => {
+                navigate('/lobby');
+              });
+            }
+            
+            // Add to document
+            document.body.appendChild(errorMessage);
           }
-          
-          // Hide character selection UI (in case it's showing)
-          game._hideCharacterSelection();
-          
-          // Show game UI
-          game._showGameUI();
-          
-          // Set state to playing
-          game.state = 'playing';
-          
-          // Prevent double map loading by temporarily overriding the _loadMap method
-          const originalLoadMap = game._loadMap;
-          game._loadMap = function(mode) {
-            console.log(`Map loading skipped - already loaded ${gameMode} map`);
-            return Promise.resolve();
-          };
-          
-          // Start the game
-          await game.start(classForGame);
-          
-          // Restore original _loadMap function
-          game._loadMap = originalLoadMap;
-          
-          // Make game globally available for debugging
-          window.game = game;
-        } catch (error) {
-          console.error('Error initializing game mode:', error);
+        };
+        
+        initializeGameMode();
+        setIsGameInitialized(true);
+        
+        // Set up event listener for escape key to return to lobby
+        const handleKeyDown = (e) => {
+          if (e.key === 'Escape') {
+            // Clean up game resources
+            game.dispose();
+            navigate('/lobby');
+          }
+        };
+        
+        window.addEventListener('keydown', handleKeyDown);
+        
+        // Return cleanup function
+        return () => {
+          window.removeEventListener('keydown', handleKeyDown);
+          if (isGameInitialized) {
+            console.log('Cleaning up game resources');
+            game.dispose();
+          }
+        };
+      } catch (error) {
+        console.error('Critical error initializing game:', error);
+        
+        // Display error message to user
+        const errorMessage = document.createElement('div');
+        errorMessage.style.position = 'absolute';
+        errorMessage.style.top = '50%';
+        errorMessage.style.left = '50%';
+        errorMessage.style.transform = 'translate(-50%, -50%)';
+        errorMessage.style.color = 'white';
+        errorMessage.style.backgroundColor = 'rgba(220, 53, 69, 0.8)';
+        errorMessage.style.padding = '20px';
+        errorMessage.style.borderRadius = '5px';
+        errorMessage.style.fontSize = '18px';
+        errorMessage.style.textAlign = 'center';
+        errorMessage.style.maxWidth = '80%';
+        errorMessage.innerHTML = `
+          <h3>Critical Error</h3>
+          <p>Unable to initialize the game engine. Please try again later.</p>
+          <pre style="text-align: left; max-width: 100%; overflow: auto; background: #333; padding: 10px; margin-top: 10px; font-size: 12px;">${error.stack || error.message || 'Unknown error'}</pre>
+          <button style="padding: 10px 20px; margin-top: 15px; cursor: pointer; background: #444; color: white; border: none; border-radius: 4px;">
+            Return to Lobby
+          </button>
+        `;
+        
+        // Add button event listener
+        const button = errorMessage.querySelector('button');
+        if (button) {
+          button.addEventListener('click', () => {
+            navigate('/lobby');
+          });
         }
-      };
-      
-      initializeGameMode();
-      setIsGameInitialized(true);
-      
-      // Set up event listener for escape key to return to lobby
-      const handleKeyDown = (e) => {
-        if (e.key === 'Escape') {
-          // Clean up game resources
-          game.dispose();
-          navigate('/lobby');
-        }
-      };
-      
-      window.addEventListener('keydown', handleKeyDown);
-      
-      // Return cleanup function
-      return () => {
-        window.removeEventListener('keydown', handleKeyDown);
-        if (isGameInitialized) {
-          console.log('Cleaning up game resources');
-          game.dispose();
-        }
-      };
+        
+        // Add to document
+        document.body.appendChild(errorMessage);
+      }
     }
   }, [canvasRef, characterClass, gameMode, isGameInitialized, navigate, tournament]);
 

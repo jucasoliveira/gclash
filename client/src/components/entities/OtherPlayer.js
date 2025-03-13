@@ -279,12 +279,41 @@ class OtherPlayer extends Entity {
       return;
     }
     
-    // Update target position
-    this.targetPosition.set(
+    // Create a new target position
+    const newTargetPosition = new THREE.Vector3(
       data.position.x,
       data.position.y,
       data.position.z
     );
+    
+    // Check if the position is walkable (only in tournament mode)
+    const currentMap = window.game?.currentMap;
+    if (currentMap && window.game?.gameMode === 'tournament' && typeof currentMap.isWalkable === 'function') {
+      // Check if the position is walkable
+      if (!currentMap.isWalkable(newTargetPosition)) {
+        console.log(`[OTHER_PLAYER] Player ${this.id} moved to non-walkable position, adjusting`);
+        
+        // Find the nearest walkable position
+        const adjustedPosition = currentMap.adjustToWalkable(newTargetPosition, this.position);
+        
+        // If a walkable position was found, use it
+        if (adjustedPosition) {
+          this.targetPosition.copy(adjustedPosition);
+        } else {
+          // If no walkable position found, use the original position
+          this.targetPosition.copy(newTargetPosition);
+        }
+      } else {
+        // Position is walkable, adjust height to match terrain
+        const height = currentMap.getHeightAt(newTargetPosition);
+        newTargetPosition.y = height + 0.1; // Slightly above ground
+        this.targetPosition.copy(newTargetPosition);
+      }
+    } else {
+      // Not in tournament mode or map doesn't support walkable tiles
+      // Use the original position
+      this.targetPosition.copy(newTargetPosition);
+    }
     
     // Enable interpolation
     this.isInterpolating = true;
@@ -312,6 +341,12 @@ class OtherPlayer extends Entity {
     // Call base entity update
     super.update(deltaTime);
     
+    // Ensure a reasonable deltaTime (prevent extremely small values)
+    const safeDeltatime = Math.max(deltaTime, 0.016); // Force minimum 16ms
+    
+    // Always update height based on terrain to ensure player stays on top of tiles
+    this._updateHeightBasedOnTerrain();
+    
     // Interpolate position if needed
     if (this.isInterpolating) {
       // Calculate distance to target
@@ -327,6 +362,9 @@ class OtherPlayer extends Entity {
           this.mesh.position.copy(this.position);
         }
       } else {
+        // Store previous position for comparison
+        this._previousPosition = this._previousPosition || this.position.clone();
+        
         // Interpolate position
         const newPosition = new THREE.Vector3().copy(this.position).lerp(
           this.targetPosition, 
@@ -336,15 +374,19 @@ class OtherPlayer extends Entity {
         // Update position without triggering events
         this.position.copy(newPosition);
         
-        // Update mesh position
-        if (this.mesh) {
+        // Update mesh position only if it has changed significantly
+        if (this.mesh && this.position.distanceTo(this._previousPosition) > 0.001) {
           this.mesh.position.copy(this.position);
+          this._previousPosition.copy(this.position);
         }
       }
     }
     
-    // Update health bar orientation to face camera
-    if (this.healthBar && window.currentCamera) {
+    // Update health bar orientation to face camera - throttle updates
+    this._healthBarUpdateAccumulator = (this._healthBarUpdateAccumulator || 0) + safeDeltatime;
+    
+    // Only update health bar orientation every 100ms instead of every frame
+    if (this._healthBarUpdateAccumulator >= 0.1 && this.healthBar && window.currentCamera) {
       // Make health bar face camera
       this.healthBar.lookAt(window.currentCamera.position);
       
@@ -352,10 +394,48 @@ class OtherPlayer extends Entity {
       if (this.mesh) {
         this.healthBar.visible = this.mesh.visible;
       }
-    } else if (this.mesh && this.mesh.visible && !this.healthBar) {
+      
+      // Reset accumulator
+      this._healthBarUpdateAccumulator = 0;
+    } else if (this.mesh && this.mesh.visible && !this.healthBar && !this._healthBarCreationAttempted) {
       // Create health bar if it doesn't exist but should
+      // Only attempt to create once to avoid repeated creation attempts
       console.log(`[OTHER_PLAYER] Creating missing health bar for visible player ${this.id}`);
       this._createHealthBar();
+      this._healthBarCreationAttempted = true;
+    }
+  }
+
+  /**
+   * Update player's Y position based on the terrain height
+   * @private
+   */
+  _updateHeightBasedOnTerrain() {
+    // Only adjust height in tournament mode
+    if (window.game?.gameMode !== 'tournament') return;
+    
+    const currentMap = window.game?.currentMap;
+    if (!currentMap || typeof currentMap.getHeightAt !== 'function') return;
+    
+    // Get terrain height at current position
+    const terrainHeight = currentMap.getHeightAt(this.position);
+    
+    // Set player slightly above terrain
+    if (terrainHeight !== undefined) {
+      // Only update if height change is significant
+      if (Math.abs(this.position.y - (terrainHeight + 0.1)) > 0.01) {
+        this.position.y = terrainHeight + 0.1;
+        
+        // Force update mesh position
+        if (this.mesh) {
+          this.mesh.position.copy(this.position);
+        }
+        
+        // Log position change occasionally
+        if (Math.random() < 0.01) {
+          console.log(`[OTHER_PLAYER] Adjusted height to ${this.position.y.toFixed(2)} based on terrain at (${this.position.x.toFixed(2)}, ${this.position.z.toFixed(2)})`);
+        }
+      }
     }
   }
 

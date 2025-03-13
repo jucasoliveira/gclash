@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import Entity from './Entity.js';
 import eventBus from '../core/EventBus.js';
 import webSocketManager from '../network/WebSocketManager.js';
+import game from '../core/Game.js';
 
 /**
  * Player - Represents the local player in the game
@@ -280,101 +281,385 @@ class Player extends Entity {
   }
 
   /**
-   * Handle move to position event (left click on ground)
-   * @param {Object} data - Move event data
+   * Handle player movement based on mouse click
+   * @param {Object} data - Click data with position and ndc coordinates
    * @private
    */
   _handleMove(data) {
+    // Skip if no data
+    if (!data) return;
+    
     // Skip if we're attacking
     if (this.isAttacking) {
       console.log('Not moving - currently attacking');
       return;
     }
     
+    // Skip if dead
+    if (this.isDead) {
+      console.log('Not moving - player is dead');
+      return;
+    }
+    
+    // Check if we have normalized device coordinates
+    if (!data.ndc || data.ndc.x === undefined || data.ndc.y === undefined) {
+      console.warn('Missing normalized device coordinates in move data');
+      return;
+    }
+    
     // Create a raycaster for ground detection
     const raycaster = new THREE.Raycaster();
+    
+    // Ensure we have a valid camera
+    if (!window.currentCamera) {
+      window.currentCamera = window.game?.renderer?.camera;
+      if (!window.currentCamera) {
+        console.error('No camera available for raycasting');
+        return;
+      }
+    }
+    
+    // Set raycaster from camera using NDC
     raycaster.setFromCamera(data.ndc, window.currentCamera);
     
-    // Get the ground plane
-    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    // Create an array of intersectable objects that represent the ground
+    const intersectObjects = [];
     
-    // Find intersection with ground plane
-    const intersection = new THREE.Vector3();
-    if (raycaster.ray.intersectPlane(groundPlane, intersection)) {
-      // Log debug info including current position and click position
-      const distanceToClick = this.position.distanceTo(intersection);
-      console.log(`Moving to position: (${intersection.x.toFixed(2)}, ${intersection.y.toFixed(2)}, ${intersection.z.toFixed(2)})`);
-      console.log(`Current position: (${this.position.x.toFixed(2)}, ${this.position.y.toFixed(2)}, ${this.position.z.toFixed(2)})`);
-      console.log(`Distance to click: ${distanceToClick.toFixed(2)} units`);
+    // Add the map floor to intersectables if available
+    const mapFloor = window.game?.renderer.getObject('mapFloor');
+    if (mapFloor) {
+      intersectObjects.push(mapFloor);
+    }
+    
+    // Also try stone, sand, grass meshes
+    ['stoneMesh', 'grassMesh', 'dirt2Mesh', 'dirtMesh', 'sandMesh'].forEach(meshName => {
+      const mesh = window.game?.renderer.getObject(meshName);
+      if (mesh) {
+        intersectObjects.push(mesh);
+      }
+    });
+    
+    let position = null;
+    let intersections = [];
+    
+    // First try to intersect with actual terrain objects
+    if (intersectObjects.length > 0) {
+      intersections = raycaster.intersectObjects(intersectObjects, false);
       
-      // Set the target position for the player to move towards
-      this.targetPosition = intersection.clone();
-      this.isMouseMoving = true;
+      if (intersections.length > 0) {
+        // Use the closest intersection
+        const intersection = intersections[0];
+        position = intersection.point.clone();
+        console.log(`Intersected with ${intersection.object.name || 'unnamed object'} at ${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)}`);
+      }
+    }
+    
+    // If no intersections with terrain, use a plane at player's height as fallback
+    if (!position) {
+      const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -this.position.y);
+      const intersection = new THREE.Vector3();
       
-      // Create a visual movement indicator
-      this._createMovementIndicator(intersection);
+      if (raycaster.ray.intersectPlane(groundPlane, intersection)) {
+        position = intersection.clone();
+        console.log(`Using ground plane intersection at ${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)}`);
+      } else {
+        console.warn('Failed to intersect with ground plane');
+        return;
+      }
+    }
+    
+    if (!position) {
+      console.error('Could not determine target position');
+      return;
+    }
+    
+    // Get current map
+    const currentMap = window.game?.currentMap;
+    
+    // Adjust height based on terrain if possible
+    if (currentMap && typeof currentMap.getHeightAt === 'function') {
+      const terrainHeight = currentMap.getHeightAt(position);
+      if (terrainHeight !== undefined) {
+        position.y = terrainHeight + 0.1; // Slightly above terrain
+      }
+    }
+    
+    // Log movement details
+    console.log(`Moving to position: (${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)})`);
+    console.log(`Current position: (${this.position.x.toFixed(2)}, ${this.position.y.toFixed(2)}, ${this.position.z.toFixed(2)})`);
+    const distance = this.position.distanceTo(position);
+    console.log(`Distance to click: ${distance.toFixed(2)} units`);
+    
+    // Create movement indicator at clicked position
+    this._createMovementIndicator(position);
+    
+    // Set target position directly with no walkable check (for simplicity)
+    this.targetPosition = position.clone();
+    
+    // Clear any existing path
+    this.walkablePath = null;
+    
+    // Start mouse movement
+    this.isMouseMoving = true;
+    
+    // Reset WASD movement since mouse movement takes priority
+    this.movementDirection.set(0, 0, 0);
+    
+    // Force mesh to update position (if it exists)
+    if (this.mesh) {
+      this.mesh.position.copy(this.position);
+    }
+    
+    // Emit movement event
+    eventBus.emit('player.moveStart', { targetPosition: this.targetPosition.clone() });
+  }
+  
+  /**
+   * Find a walkable path to the target position
+   * @param {THREE.Vector3} targetPosition - The target position
+   * @param {number} maxSteps - Maximum number of steps to try
+   * @returns {Array<THREE.Vector3>|null} - Array of positions forming a path, or null if no path found
+   * @private
+   */
+  _findWalkablePath(targetPosition, maxSteps = 10) {
+    const currentMap = window.game?.currentMap;
+    if (!currentMap || typeof currentMap.isWalkable !== 'function') {
+      console.warn(`[PATH] No valid map or isWalkable function found`);
+      return null;
+    }
+    
+    console.log(`[PATH] Finding walkable path from (${this.position.x.toFixed(2)}, ${this.position.y.toFixed(2)}, ${this.position.z.toFixed(2)}) to (${targetPosition.x.toFixed(2)}, ${targetPosition.y.toFixed(2)}, ${targetPosition.z.toFixed(2)})`);
+    
+    // Direction from current to target
+    const direction = new THREE.Vector3()
+      .subVectors(targetPosition, this.position)
+      .normalize();
+    
+    // Total distance to target
+    const totalDistance = this.position.distanceTo(targetPosition);
+    
+    // Step size (divide total distance by number of steps)
+    // Use a smaller step size for more precise path finding
+    const stepSize = Math.max(0.3, totalDistance / maxSteps);
+    console.log(`[PATH] Total distance: ${totalDistance.toFixed(2)}, Step size: ${stepSize.toFixed(2)}, Max steps: ${maxSteps}`);
+    
+    // Create path array
+    const path = [];
+    
+    // Try stepping towards the target
+    for (let step = 1; step <= maxSteps; step++) {
+      // Calculate distance for this step (don't exceed total distance)
+      const stepDistance = Math.min(step * stepSize, totalDistance);
       
-      // Reset WASD movement since mouse movement takes priority
-      this.movementDirection.set(0, 0, 0);
-      this.isMoving = false;
+      // Calculate position at this step
+      const stepPosition = new THREE.Vector3()
+        .copy(this.position)
+        .addScaledVector(direction, stepDistance);
       
-      // Debug info
-      console.log('Player speed stat:', this.stats.speed);
-      console.log('Movement type:', this.classType);
+      // Check if this position is walkable
+      const isWalkable = currentMap.isWalkable(stepPosition);
+      console.log(`[PATH] Step ${step}: Position (${stepPosition.x.toFixed(2)}, ${stepPosition.y.toFixed(2)}, ${stepPosition.z.toFixed(2)}) is ${isWalkable ? 'walkable' : 'NOT walkable'}`);
+      
+      if (isWalkable) {
+        // Adjust height to match terrain
+        if (typeof currentMap.getHeightAt === 'function') {
+          const height = currentMap.getHeightAt(stepPosition);
+          stepPosition.y = height + 0.1;
+        }
+        
+        // Add to path
+        path.push(stepPosition);
+        
+        // If we've reached the target, we're done
+        if (stepDistance >= totalDistance) {
+          console.log(`[PATH] Reached target, path complete with ${path.length} steps`);
+          return path;
+        }
+      } else {
+        // If we hit a non-walkable tile, return the path so far (if any)
+        if (path.length > 0) {
+          console.log(`[PATH] Hit non-walkable tile at step ${step}, returning partial path with ${path.length} steps`);
+          return path;
+        } else {
+          console.log(`[PATH] No walkable path found - first step is not walkable`);
+          return null;
+        }
+      }
+    }
+    
+    // If we've tried all steps and still have a path, return it
+    if (path.length > 0) {
+      console.log(`[PATH] Reached max steps (${maxSteps}), returning partial path with ${path.length} steps`);
+      return path;
     } else {
-      console.warn('Failed to intersect with ground plane');
+      console.log(`[PATH] No walkable path found after ${maxSteps} steps`);
+      return null;
     }
   }
   
   /**
-   * Create a visual indicator at the clicked position
+   * Create a red X indicator at a non-walkable position
    * @param {THREE.Vector3} position - Position to place the indicator
    * @private
    */
-  _createMovementIndicator(position) {
-    // Create a smaller, dark red circular indicator
-    const geometry = new THREE.CircleGeometry(0.5, 32); // Reduced size from 1.0 to 0.5
-    const material = new THREE.MeshBasicMaterial({
-      color: 0x8B0000, // Changed to dark red
-      transparent: true,
-      opacity: 0.7, // Slightly reduced opacity
-      side: THREE.DoubleSide
+  _createNonWalkableIndicator(position) {
+    // Create a red X indicator
+    const size = 0.5;
+    const geometry = new THREE.BufferGeometry();
+    
+    // Create X shape vertices
+    const vertices = new Float32Array([
+      // First line of X
+      -size, 0.1, -size,
+      size, 0.1, size,
+      
+      // Second line of X
+      -size, 0.1, size,
+      size, 0.1, -size
+    ]);
+    
+    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    
+    // Create red material
+    const material = new THREE.LineBasicMaterial({ 
+      color: 0xff0000,
+      linewidth: 3
     });
     
-    const indicator = new THREE.Mesh(geometry, material);
-    indicator.position.copy(position);
-    indicator.position.y += 0.05; // Slightly higher above ground to avoid z-fighting
-    indicator.rotation.x = -Math.PI / 2; // Lay flat on the ground
+    // Create line segments
+    const indicator = new THREE.LineSegments(geometry, material);
     
-    // Add to scene temporarily
+    // Position indicator
+    indicator.position.copy(position);
+    
+    // Ensure Y position is slightly above terrain
+    const currentMap = window.game?.currentMap;
+    if (currentMap && typeof currentMap.getHeightAt === 'function') {
+      indicator.position.y = currentMap.getHeightAt(position) + 0.1;
+    }
+    
+    // Add to scene
     eventBus.emit('renderer.addObject', {
-      id: `move-indicator-${Date.now()}`,
+      id: `non-walkable-indicator-${Date.now()}`,
       object: indicator,
       temporary: true,
-      duration: 1.0 // Slightly reduced from 1.5 to 1.0 seconds
+      duration: 1.5
     });
     
-    console.log(`Created movement indicator at (${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)})`);
-    
-    // Animate the indicator (fade out)
+    // Animate indicator
     const startTime = Date.now();
-    const duration = 1000; // 1 second
+    const duration = 1500; // 1.5 seconds
     
     const animateIndicator = () => {
-      const elapsedTime = Date.now() - startTime;
-      const progress = Math.min(elapsedTime / duration, 1);
+      const elapsed = Date.now() - startTime;
+      const progress = elapsed / duration;
       
-      if (progress < 1 && indicator.parent) {
-        // Indicator fade out and scale up slightly
-        indicator.material.opacity = 0.7 * (1 - progress);
-        indicator.scale.set(1 + progress * 0.3, 1 + progress * 0.3, 1);
+      if (progress < 1) {
+        // Fade out and scale up
+        indicator.material.opacity = 1 - progress;
+        indicator.scale.set(1 + progress, 1 + progress, 1 + progress);
         
         requestAnimationFrame(animateIndicator);
       }
     };
     
     // Start animation
-    animateIndicator();
+    requestAnimationFrame(animateIndicator);
+  }
+
+  /**
+   * Create a more visible indicator
+   * @param {THREE.Vector3} position - Position to place the indicator
+   * @private
+   */
+  _createMovementIndicator(position) {
+    // Ensure we have a valid position
+    if (!position) {
+      console.warn(`[INDICATOR] Cannot create movement indicator: invalid position`);
+      return;
+    }
+    
+    // Get the correct height from the current map
+    const currentMap = window.game?.currentMap;
+    let indicatorHeight = position.y;
+    
+    if (currentMap && typeof currentMap.getHeightAt === 'function') {
+      // Get terrain height at indicator position
+      const terrainHeight = currentMap.getHeightAt(position);
+      
+      if (terrainHeight !== undefined) {
+        // Set indicator slightly above terrain
+        indicatorHeight = terrainHeight + 0.1;
+      }
+    }
+    
+    // Create a much more visible indicator
+    const geometry = new THREE.RingGeometry(0.5, 0.7, 32);
+    const material = new THREE.MeshBasicMaterial({
+      color: 0x00ffff, // Cyan for high visibility
+      transparent: true,
+      opacity: 0.8,
+      side: THREE.DoubleSide,
+      depthTest: false // Ensure it's visible even if below terrain
+    });
+    
+    const indicator = new THREE.Mesh(geometry, material);
+    
+    // Set position with the correct height
+    indicator.position.set(position.x, indicatorHeight, position.z);
+    indicator.rotation.x = -Math.PI / 2; // Lay flat on the ground
+    
+    // Also add a vertical beam for better visibility
+    const beamGeometry = new THREE.CylinderGeometry(0.05, 0.05, 3, 8);
+    const beamMaterial = new THREE.MeshBasicMaterial({
+      color: 0x00ffff, // Cyan to match ring
+      transparent: true,
+      opacity: 0.4
+    });
+    
+    const beam = new THREE.Mesh(beamGeometry, beamMaterial);
+    beam.position.set(0, 1.5, 0); // Position above the ring
+    indicator.add(beam);
+    
+    // Generate a unique ID for this indicator
+    const indicatorId = `move-indicator-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    
+    // Log the indicator creation for debugging
+    console.log(`[INDICATOR] Created movement indicator at (${position.x.toFixed(2)}, ${indicatorHeight.toFixed(2)}, ${position.z.toFixed(2)})`);
+    
+    // Add to scene with longer duration
+    eventBus.emit('renderer.addObject', {
+      id: indicatorId,
+      object: indicator,
+      temporary: true,
+      duration: 3.0 // 3 seconds for better visibility
+    });
+    
+    // Add pulsing animation effect
+    const startTime = Date.now();
+    const duration = 3000; // 3 seconds, matching the duration above
+    
+    const animateIndicator = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = elapsed / duration;
+      
+      if (progress < 1 && indicator.parent) {
+        // Scale the indicator using sine wave for pulsing effect
+        const scale = 0.9 + Math.sin(progress * Math.PI * 6) * 0.3;
+        indicator.scale.set(scale, scale, scale);
+        
+        // Rotate the indicator for more visibility
+        indicator.rotation.z += 0.01;
+        
+        // Continue animation
+        requestAnimationFrame(animateIndicator);
+      }
+    };
+    
+    // Start animation
+    requestAnimationFrame(animateIndicator);
+    
+    return indicator;
   }
 
   /**
@@ -545,264 +830,102 @@ class Player extends Entity {
     super.update(deltaTime);
     
     // Ensure a reasonable deltaTime (prevent extremely small values)
-    // This protects against irregular frame rates and potential division by zero
-    const safeDeltatime = Math.max(deltaTime, 0.016); // Force minimum 16ms (approximately 60 FPS)
+    const safeDeltatime = Math.max(deltaTime, 0.016); // Force minimum 16ms (~60 FPS)
     
-    // Debug log for deltaTime issues (uncomment if needed)
-    if (deltaTime < 0.001) {
-      console.warn(`Extremely small deltaTime: ${deltaTime}`);
+    // Update height based on terrain to ensure player stays on top of tiles
+    this._updateHeightBasedOnTerrain();
+    
+    // Make sure mesh follows player position (crucial for visual rendering)
+    if (this.mesh) {
+      this.mesh.position.copy(this.position);
     }
     
-    // Handle mouse-driven movement (Diablo-style)
+    // Handle mouse-driven movement (click to move)
     if (this.isMouseMoving && this.targetPosition) {
-      // Calculate direction vector to target
-      const direction = new THREE.Vector3();
-      direction.subVectors(this.targetPosition, this.position);
-      direction.y = 0; // Keep movement on the ground plane
+      // Calculate distance to target
+      const distanceToTarget = this.position.distanceTo(this.targetPosition);
       
-      // Check if we've arrived (within a small threshold)
-      const distanceToTarget = direction.length();
-      
-      // Log distance for debugging more frequently
-      if (distanceToTarget % 0.5 < 0.01) { // Log approx every 0.5 units
-        console.log(`Distance to target: ${distanceToTarget.toFixed(2)} units`);
-      }
-      
-      if (distanceToTarget < 0.2) {
-        // We've arrived at the destination
-        this.isMouseMoving = false;
-        this.targetPosition = null;
-        console.log('Arrived at destination');
-        
-        // Check if we were moving to attack a target
-        if (this.attackTargetId && !this.isAttacking && this.attackCooldown <= 0) {
-          const target = this._getEntityById(this.attackTargetId);
-          if (target) {
-            // Check if we're in range now
-            const distanceToEnemy = this.position.distanceTo(target.position);
-            if (distanceToEnemy <= this.primaryAttack.range) {
-              // We're in range, try to attack
-              const manaCost = this.manaUsage[this.classType].cost;
-              if (this.mana >= manaCost) {
-                // Consume mana
-                this.mana -= manaCost;
-                this._emitManaChange();
-                
-                // Record attack time for Ranger mana regeneration
-                this.lastAttackTime = Date.now();
-                
-                // Start attack cooldown
-                this.attackCooldown = this.primaryAttack.cooldown;
-                this.isAttacking = true;
-                
-                // Execute the attack
-                this._executeAttack(this.attackTargetId, this.primaryAttack.damage, distanceToEnemy);
-                
-                // Show attack animation/effect
-                this._showAttackEffect();
-                
-                // Reset attack state after animation completes
-                setTimeout(() => {
-                  this.isAttacking = false;
-                }, 200);
-              }
-            }
-          }
-          
-          // Clear the attack target
-          this.attackTargetId = null;
-        }
-      } else {
-        // Normalize direction and apply movement
-        direction.normalize();
-        
-        // Calculate movement step for this frame - DRAMATICALLY increased speed multiplier
-        const movementMultiplier = 30.0; // Massively increased from 10.0 to 30.0
-        const step = this.stats.speed * safeDeltatime * movementMultiplier;
-        
-        console.log(`Movement calculation: speed=${this.stats.speed}, deltaTime=${safeDeltatime}, multiplier=${movementMultiplier}`);
-        console.log(`Step size: ${step.toFixed(4)} units`);
-        
-        const oldPos = this.position.clone(); // For logging movement distance
-        
-        // Move toward target, but don't overshoot
-        if (step >= distanceToTarget) {
-          this.position.copy(this.targetPosition);
-          this.isMouseMoving = false;
-          this.targetPosition = null;
-          console.log('Reached target position in one step');
-        } else {
-          // Move in the direction of the target
-          this.position.x += direction.x * step;
-          this.position.z += direction.z * step;
-          
-          // More frequent logging of movement amount
-          if (Math.random() < 0.2) { // ~20% chance of logging each frame
-            const moveDistance = this.position.distanceTo(oldPos);
-            console.log(`Moved ${moveDistance.toFixed(4)} units this frame, step size: ${step.toFixed(4)}`);
-            console.log(`New position: (${this.position.x.toFixed(2)}, ${this.position.y.toFixed(2)}, ${this.position.z.toFixed(2)})`);
-          }
-          
-          // Apply rotation to face movement direction
-          if (direction.length() > 0.1) {
-            const targetRotation = Math.atan2(direction.x, direction.z);
-            // Smoothly rotate toward target direction
-            const rotationSpeed = 30 * safeDeltatime; // Increased rotation speed further
-            const angleDiff = this._getAngleDifference(this.rotation.y, targetRotation);
-            this.rotation.y += angleDiff * rotationSpeed;
-          }
-        }
-        
-        // Force position update on the mesh
+      // If very close to target, just snap to it
+      if (distanceToTarget < 0.1) {
+        this.position.copy(this.targetPosition);
         if (this.mesh) {
           this.mesh.position.copy(this.position);
-          // Log mesh position to ensure it's updating correctly
-          if (Math.random() < 0.05) {
-            console.log(`Mesh position: (${this.mesh.position.x.toFixed(2)}, ${this.mesh.position.y.toFixed(2)}, ${this.mesh.position.z.toFixed(2)})`);
-          }
-        } else {
-          console.warn('Player has no mesh to update!');
         }
+        console.log(`[MOVEMENT] Reached target position`);
+        this.isMouseMoving = false;
+      } else {
+        // Calculate direction to target
+        const direction = new THREE.Vector3()
+          .subVectors(this.targetPosition, this.position)
+          .normalize();
         
-        // Send position update to server
-        webSocketManager.updatePosition({
-          x: this.position.x,
-          y: this.position.y,
-          z: this.position.z
-        });
+        // Move towards target at appropriate speed
+        const moveDistance = this.stats.speed * safeDeltatime * 40;
         
-        // Check if we're moving to attack a target and might be in range now
-        if (this.attackTargetId && !this.isAttacking && this.attackCooldown <= 0) {
-          const target = this._getEntityById(this.attackTargetId);
-          if (target) {
-            // Check if we're in range now
-            const distanceToEnemy = this.position.distanceTo(target.position);
-            if (distanceToEnemy <= this.primaryAttack.range) {
-              // We're in range, stop moving and attack
-              this.isMouseMoving = false;
-              this.targetPosition = null;
-              
-              // Check mana
-              const manaCost = this.manaUsage[this.classType].cost;
-              if (this.mana >= manaCost) {
-                // Consume mana
-                this.mana -= manaCost;
-                this._emitManaChange();
-                
-                // Record attack time for Ranger mana regeneration
-                this.lastAttackTime = Date.now();
-                
-                // Start attack cooldown
-                this.attackCooldown = this.primaryAttack.cooldown;
-                this.isAttacking = true;
-                
-                // Execute the attack
-                this._executeAttack(this.attackTargetId, this.primaryAttack.damage, distanceToEnemy);
-                
-                // Show attack animation/effect
-                this._showAttackEffect();
-                
-                // Reset attack state after animation completes
-                setTimeout(() => {
-                  this.isAttacking = false;
-                }, 200);
-                
-                // Clear the attack target
-                this.attackTargetId = null;
-              }
-            }
-          }
+        // Calculate new position
+        const newPosition = new THREE.Vector3()
+          .copy(this.position)
+          .addScaledVector(direction, moveDistance);
+        
+        // Update position
+        this.position.copy(newPosition);
+        
+        // Update mesh position
+        if (this.mesh) {
+          this.mesh.position.copy(this.position);
+          
+          // Rotate mesh to face movement direction
+          const targetRotation = Math.atan2(direction.x, direction.z);
+          const currentRotation = this.mesh.rotation.y;
+          const rotationDifference = this._getAngleDifference(currentRotation, targetRotation);
+          
+          // Apply smooth rotation
+          this.mesh.rotation.y += rotationDifference * 0.1;
         }
       }
     }
-    // Handle WASD keyboard movement (as secondary option)
-    else if (this.isMoving) {
-      // Cancel any mouse movement since keyboard takes over
-      this.isMouseMoving = false;
-      this.targetPosition = null;
-      this.attackTargetId = null; // Clear any pending attack
+    
+    // Handle keyboard movement (WASD)
+    if (this.isMoving && this.movementDirection.length() > 0) {
+      // Normalize movement direction
+      const normalizedDirection = this.movementDirection.clone().normalize();
       
-      // Normalize direction vector
-      const direction = this.movementDirection.clone().normalize();
+      // Calculate movement distance
+      const moveDistance = this.stats.speed * safeDeltatime * 40;
       
-      // Move player based on speed - also increase WASD movement for consistency
-      const movementMultiplier = 30.0; // Increased from 10.0 to 30.0 for consistency
-      const deltaX = direction.x * this.stats.speed * safeDeltatime * movementMultiplier;
-      const deltaZ = direction.z * this.stats.speed * safeDeltatime * movementMultiplier;
+      // Calculate new position
+      const newPosition = new THREE.Vector3()
+        .copy(this.position)
+        .addScaledVector(normalizedDirection, moveDistance);
       
-      const oldPos = this.position.clone(); // For logging movement distance
+      // Update position
+      this.position.copy(newPosition);
       
-      this.position.x += deltaX;
-      this.position.z += deltaZ;
-      
-      // More frequent logging of WASD movement
-      if (Math.random() < 0.1) { // ~10% chance of logging each frame
-        const moveDistance = this.position.distanceTo(oldPos);
-        console.log(`WASD moved ${moveDistance.toFixed(4)} units this frame, deltaX: ${deltaX.toFixed(4)}, deltaZ: ${deltaZ.toFixed(4)}`);
-      }
-      
-      // Apply rotation to face movement direction
-      if (direction.length() > 0.1) {
-        const targetRotation = Math.atan2(direction.x, direction.z);
-        // Smoothly rotate toward target direction
-        const rotationSpeed = 30 * safeDeltatime; // Increased rotation speed
-        const angleDiff = this._getAngleDifference(this.rotation.y, targetRotation);
-        this.rotation.y += angleDiff * rotationSpeed;
-      }
-      
-      // Force position update on the mesh
+      // Update mesh position
       if (this.mesh) {
         this.mesh.position.copy(this.position);
-      } else {
-        console.warn('Player has no mesh to update during WASD movement!');
-      }
-      
-      // Send movement to server
-      webSocketManager.updatePosition({
-        x: this.position.x,
-        y: this.position.y,
-        z: this.position.z
-      });
-    }
-    
-    // Update attack cooldown
-    if (this.attackCooldown > 0) {
-      // Decrease cooldown by delta time
-      this.attackCooldown = Math.max(0, this.attackCooldown - safeDeltatime);
-      
-      // Log cooldown for debugging
-      if (safeDeltatime > 0 && this.attackCooldown % 1 < safeDeltatime) {
-        console.debug(`Attack cooldown: ${this.attackCooldown.toFixed(2)}s left`);
-      }
-      
-      // If we just reached 0, log that attack is ready
-      if (this.attackCooldown === 0) {
-        console.log('Attack ready!');
+        
+        // Rotate mesh to face movement direction
+        const targetRotation = Math.atan2(normalizedDirection.x, normalizedDirection.z);
+        const currentRotation = this.mesh.rotation.y;
+        const rotationDifference = this._getAngleDifference(currentRotation, targetRotation);
+        
+        // Apply smooth rotation
+        this.mesh.rotation.y += rotationDifference * 0.1;
       }
     }
     
-    // Update core skill cooldown
-    if (this.coreSkillCooldown > 0) {
-      this.coreSkillCooldown = Math.max(0, this.coreSkillCooldown - safeDeltatime);
-      
-      if (this.coreSkillCooldown === 0) {
-        console.log('Core skill ready!');
-      }
+    // Update camera position to follow player
+    if (this.isMainPlayer && typeof window.updateCameraPosition === 'function') {
+      window.updateCameraPosition(this.position);
+    } else if (this.isMainPlayer && window.game?.renderer?.updateCameraPosition) {
+      window.game.renderer.updateCameraPosition(this.position);
     }
     
-    // Update evade cooldown
-    if (this.evadeCooldown > 0) {
-      this.evadeCooldown = Math.max(0, this.evadeCooldown - safeDeltatime);
-      
-      if (this.evadeCooldown === 0) {
-        console.log('Evade ready!');
-      }
-    }
-    
-    // Mana regeneration based on class type
+    // Regenerate mana over time
     this._regenerateMana(safeDeltatime);
     
-    // Update all cooldown UI elements
+    // Update cooldowns
     this._updateCooldownUI();
   }
   
@@ -821,45 +944,57 @@ class Player extends Entity {
   }
   
   /**
-   * Regenerate mana based on class type and state
-   * @param {number} deltaTime - Time since last update
+   * Regenerate mana based on class type
+   * @param {number} deltaTime - Time since last update in seconds
    * @private
    */
   _regenerateMana(deltaTime) {
-    // Ensure a reasonable deltaTime (prevent extremely small values)
-    const safeDeltatime = Math.max(deltaTime, 0.016); // Match the same minimum as in update method
+    // Skip if already at max mana
+    if (this.mana >= this.maxMana) {
+      this.mana = this.maxMana; // Ensure mana doesn't exceed max
+      return;
+    }
     
-    // Base regeneration for all classes
-    let manaToAdd = this.manaRegenRate * safeDeltatime;
+    let regenAmount = 0;
+    const now = Date.now();
     
-    // Class-specific bonus regeneration
+    // Different regeneration mechanics based on class
     if (this.classType === 'CLERK') {
       // Clerk regenerates mana faster when standing still
-      if (!this.isMoving) {
-        manaToAdd += this.manaUsage.CLERK.regenBonus.standing * safeDeltatime;
-      } else {
-        manaToAdd += this.manaUsage.CLERK.regenBonus.moving * safeDeltatime;
-      }
-    } else if (this.classType === 'RANGER') {
-      // Ranger regenerates mana faster when not attacking
-      const timeSinceLastAttack = (Date.now() - this.lastAttackTime) / 1000;
-      if (timeSinceLastAttack > 2) { // Not attacked for 2 seconds
-        manaToAdd += this.manaUsage.RANGER.regenBonus.notAttacking * safeDeltatime;
-      }
-    }
-    // Note: Warrior builds mana by landing hits, handled in _executeAttack
-    
-    // Log mana regeneration (occasionally)
-    if (Math.random() < 0.01) { // 1% chance to log
-      console.log(`Regenerated ${manaToAdd.toFixed(2)} mana, current: ${this.mana.toFixed(1)}/${this.maxMana}`);
-    }
-    
-    // Add regenerated mana
-    if (manaToAdd > 0) {
-      this.mana = Math.min(this.maxMana, this.mana + manaToAdd);
+      const baseRegen = this.manaRegenRate * deltaTime;
+      const standingBonus = !this.isMoving && !this.isMouseMoving ? 
+                            this.manaUsage.CLERK.regenBonus.standing : 
+                            this.manaUsage.CLERK.regenBonus.moving;
       
-      // Update mana UI
+      regenAmount = baseRegen * standingBonus;
+    } else if (this.classType === 'RANGER') {
+      // Ranger regenerates mana when not attacking for a few seconds
+      const timeSinceLastAttack = (now - this.lastAttackTime) / 1000;
+      if (timeSinceLastAttack > 3) { // 3 seconds without attacking
+        regenAmount = this.manaRegenRate * deltaTime * this.manaUsage.RANGER.regenBonus.notAttacking;
+      } else {
+        regenAmount = this.manaRegenRate * deltaTime;
+      }
+    } else {
+      // Default regeneration for other classes (e.g., Warrior)
+      regenAmount = this.manaRegenRate * deltaTime;
+    }
+    
+    // Apply regeneration
+    this.mana = Math.min(this.maxMana, this.mana + regenAmount);
+    
+    // Log mana regeneration only when significant changes occur (>= 1 mana)
+    this._lastLoggedMana = this._lastLoggedMana || this.mana;
+    if (Math.abs(this.mana - this._lastLoggedMana) >= 1) {
+      console.log(`Regenerated ${regenAmount.toFixed(2)} mana, current: ${this.mana.toFixed(1)}/${this.maxMana}`);
+      this._lastLoggedMana = this.mana;
+    }
+    
+    // Emit mana change event for UI updates - but only when significant changes occur
+    this._lastEmittedMana = this._lastEmittedMana || this.mana;
+    if (Math.abs(this.mana - this._lastEmittedMana) >= 0.5) {
       this._emitManaChange();
+      this._lastEmittedMana = this.mana;
     }
   }
   
@@ -1301,6 +1436,7 @@ class Player extends Entity {
     
     // Position at player position
     particles.position.copy(this.position);
+    particles.position.y += 0.2;
     
     // Add to scene
     eventBus.emit('renderer.addObject', {
@@ -1311,24 +1447,30 @@ class Player extends Entity {
     });
     
     // Animate particles
+    const startTime = Date.now();
+    const duration = 1000; // 1 second
+    
     const animateParticles = () => {
-      if (!particles.parent) return;
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
       
-      // Update particle positions
-      particles.children.forEach(particle => {
-        const velocity = particle.userData.velocity;
-        particle.position.add(velocity);
+      if (progress < 1 && particles.parent) {
+        // Update particle positions
+        particles.children.forEach(particle => {
+          const velocity = particle.userData.velocity;
+          particle.position.add(velocity);
+          
+          // Add slight gravity effect
+          velocity.y -= 0.001;
+          
+          // Fade out
+          if (particle.material.opacity > 0.01) {
+            particle.material.opacity -= 0.02;
+          }
+        });
         
-        // Add gravity effect
-        velocity.y -= 0.002;
-        
-        // Fade out
-        if (particle.material.opacity > 0.01) {
-          particle.material.opacity -= 0.01;
-        }
-      });
-      
-      requestAnimationFrame(animateParticles);
+        requestAnimationFrame(animateParticles);
+      }
     };
     
     // Start animation
@@ -1826,6 +1968,39 @@ class Player extends Entity {
           window.currentCamera.position.copy(originalPosition);
         }
       }, 100);
+    }
+  }
+
+  /**
+   * Update player height based on terrain
+   * @private
+   */
+  _updateHeightBasedOnTerrain() {
+    // Only adjust height in tournament mode
+    if (window.game?.gameMode !== 'tournament') return;
+    
+    const currentMap = window.game?.currentMap;
+    if (!currentMap || typeof currentMap.getHeightAt !== 'function') return;
+    
+    // Get terrain height at current position
+    const terrainHeight = currentMap.getHeightAt(this.position);
+    
+    // Set player slightly above terrain
+    if (terrainHeight !== undefined) {
+      // Only update if height change is significant
+      if (Math.abs(this.position.y - (terrainHeight + 0.1)) > 0.01) {
+        this.position.y = terrainHeight + 0.1;
+        
+        // Force update mesh position
+        if (this.mesh) {
+          this.mesh.position.copy(this.position);
+        }
+        
+        // Log position change occasionally
+        if (Math.random() < 0.01) {
+          console.log(`[PLAYER] Adjusted height to ${this.position.y.toFixed(2)} based on terrain at (${this.position.x.toFixed(2)}, ${this.position.z.toFixed(2)})`);
+        }
+      }
     }
   }
 }

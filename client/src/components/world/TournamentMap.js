@@ -24,12 +24,15 @@ class TournamentMap {
     this.wallThickness = 0.5;
     
     // Height constants for terrain types
-    this.MAX_HEIGHT = 4; // Reduced height for flatter terrain
+    this.MAX_HEIGHT = 2.5; // Reduced height for flatter terrain
     this.STONE_HEIGHT = this.MAX_HEIGHT * 0.8;
     this.DIRT_HEIGHT = this.MAX_HEIGHT * 0.7;
     this.GRASS_HEIGHT = this.MAX_HEIGHT * 0.5;
     this.SAND_HEIGHT = this.MAX_HEIGHT * 0.3;
     this.DIRT2_HEIGHT = this.MAX_HEIGHT * 0;
+    
+    // Water height (used for walkable determination)
+    this.WATER_HEIGHT = -0.1; // Slightly below zero to ensure all land is walkable
     
     // Geometry containers for merging
     this.stoneGeo = new THREE.BoxGeometry(0, 0, 0);
@@ -41,6 +44,15 @@ class TournamentMap {
     
     // Simplex noise for terrain generation
     this.noise2D = createNoise2D();
+    
+    // Tile type tracking for walkable areas
+    this.tileTypes = new Map(); // Maps position key to tile type
+    
+    // All terrain types are walkable except those with obstacles
+    this.walkableTileTypes = ['stone', 'dirt', 'grass', 'sand', 'dirt2']; 
+    
+    // Obstacle tile types that are not walkable
+    this.obstacleTypes = ['grass_with_tree', 'sand_with_stone'];
   }
 
   /**
@@ -164,6 +176,9 @@ class TournamentMap {
    * Generate the hexagon-based terrain
    */
   generateTerrain() {
+    // Clear tile types map before regenerating
+    this.tileTypes.clear();
+    
     // Generate hexagons for the map
     for (let i = -40; i < 40; i++) {
       for (let j = -40; j < 40; j++) {
@@ -176,8 +191,8 @@ class TournamentMap {
         let noise = (this.noise2D(i * 0.1, j * 0.1) + 1) * 0.5;
         let height = Math.pow(noise, 2) * this.MAX_HEIGHT; // Increased power for flatter terrain
         
-        // Create the hexagon
-        this.makeHex(height, position);
+        // Create the hexagon and track its type
+        this.makeHex(height, position, i, j);
       }
     }
     
@@ -225,30 +240,50 @@ class TournamentMap {
    * Create a hexagon and add it to the appropriate geometry container
    * @param {number} height - Height of the hexagon
    * @param {THREE.Vector2} position - Position of the hexagon
+   * @param {number} tileX - X tile coordinate
+   * @param {number} tileY - Y tile coordinate
    */
-  makeHex(height, position) {
+  makeHex(height, position, tileX, tileY) {
     let geo = this.hexGeometry(height, position);
+    let tileType = '';
     
     if (height > this.STONE_HEIGHT) {
       this.stoneGeo = BufferGeometryUtils.mergeGeometries([this.stoneGeo, geo]);
       if (Math.random() > 0.8) {
         this.stoneGeo = BufferGeometryUtils.mergeGeometries([this.stoneGeo, this.stone(height, position)]);
       }
+      tileType = 'stone';
     } else if (height > this.DIRT_HEIGHT) {
       this.dirtGeo = BufferGeometryUtils.mergeGeometries([this.dirtGeo, geo]);
+      tileType = 'dirt';
     } else if (height > this.GRASS_HEIGHT) {
       this.grassGeo = BufferGeometryUtils.mergeGeometries([this.grassGeo, geo]);
       if (Math.random() > 0.8) {
         this.grassGeo = BufferGeometryUtils.mergeGeometries([this.grassGeo, this.tree(height, position)]);
+        tileType = 'grass_with_tree'; // Mark tiles with trees as non-walkable
+      } else {
+        tileType = 'grass';
       }
     } else if (height > this.SAND_HEIGHT) {
       this.sandGeo = BufferGeometryUtils.mergeGeometries([geo, this.sandGeo]);
       if (Math.random() > 0.8) {
         this.stoneGeo = BufferGeometryUtils.mergeGeometries([this.stoneGeo, this.stone(height, position)]);
+        tileType = 'sand_with_stone'; // Mark tiles with stones as non-walkable
+      } else {
+        tileType = 'sand';
       }
     } else if (height > this.DIRT2_HEIGHT) {
       this.dirt2Geo = BufferGeometryUtils.mergeGeometries([this.dirt2Geo, geo]);
+      tileType = 'dirt2';
     }
+    
+    // Store the tile type for this position
+    const posKey = `${tileX},${tileY}`;
+    this.tileTypes.set(posKey, { 
+      type: tileType, 
+      height: height, 
+      position: new THREE.Vector3(position.x, height, position.y) 
+    });
   }
 
   /**
@@ -591,20 +626,301 @@ class TournamentMap {
   }
 
   /**
-   * Get a random spawn position within the map
+   * Check if a position is on a walkable tile
+   * @param {THREE.Vector3} position - The position to check
+   * @returns {boolean} - Whether the position is walkable
+   */
+  isWalkable(position) {
+    // Validate input
+    if (!position || typeof position.x !== 'number' || typeof position.z !== 'number') {
+      console.warn('[MAP] Invalid position in isWalkable check');
+      return false;
+    }
+    
+    // First check if position is within map radius
+    const posXZ = new THREE.Vector2(position.x, position.z);
+    const distanceFromCenter = posXZ.length();
+    
+    if (distanceFromCenter > this.mapRadius) {
+      // Outside map boundary
+      if (Math.random() < 0.01) { // Throttle logging
+        console.log(`[MAP] Position (${position.x.toFixed(2)}, ${position.z.toFixed(2)}) outside map radius: ${distanceFromCenter.toFixed(2)} > ${this.mapRadius}`);
+      }
+      return false;
+    }
+    
+    // Convert world position to nearest tile coordinates
+    const tileCoords = this.worldToTile(position);
+    const posKey = `${tileCoords.x},${tileCoords.y}`;
+    
+    // Check if we have tile type information for this position
+    if (this.tileTypes.has(posKey)) {
+      const tileInfo = this.tileTypes.get(posKey);
+      
+      // First check if the tile is above water height
+      if (tileInfo.height <= this.WATER_HEIGHT) {
+        if (Math.random() < 0.01) { // Throttle logging
+          console.log(`[MAP] Position (${position.x.toFixed(2)}, ${position.z.toFixed(2)}) below water height: ${tileInfo.height.toFixed(2)} <= ${this.WATER_HEIGHT}`);
+        }
+        return false; // Below water level, not walkable
+      }
+      
+      // Then check if the tile has an obstacle
+      if (this.obstacleTypes.includes(tileInfo.type)) {
+        if (Math.random() < 0.01) { // Throttle logging
+          console.log(`[MAP] Position (${position.x.toFixed(2)}, ${position.z.toFixed(2)}) has obstacle: ${tileInfo.type}`);
+        }
+        return false; // Has obstacle, not walkable
+      }
+      
+      // Above water and no obstacles, so it's walkable
+      return true;
+    } else {
+      // If we don't have specific tile info but we're within the map,
+      // assume it's walkable as a fallback
+      if (distanceFromCenter < this.mapRadius * 0.95) {
+        // Inside map bounds but no tile data - assume walkable
+        if (Math.random() < 0.01) { // Throttle logging 
+          console.log(`[MAP] Position (${position.x.toFixed(2)}, ${position.z.toFixed(2)}) has no tile data but within map - assuming walkable`);
+        }
+        return true;
+      } else {
+        // Close to edge with no tile data - assume not walkable
+        if (Math.random() < 0.01) { // Throttle logging
+          console.log(`[MAP] Position (${position.x.toFixed(2)}, ${position.z.toFixed(2)}) has no tile data and near edge - assuming not walkable`);
+        }
+        return false;
+      }
+    }
+  }
+
+  /**
+   * Convert world position to tile coordinates
+   * @param {THREE.Vector3} position - World position
+   * @returns {Object} - Tile coordinates {x, y}
+   */
+  worldToTile(position) {
+    // This is an approximation - finding the exact hex tile from a position
+    // requires more complex math, but this should work for most cases
+    const x = position.x;
+    const z = position.z;
+    
+    // Convert to axial coordinates (approximate)
+    let q = x / 1.77;
+    let r = (z / 1.535) - (q / 2);
+    
+    // Round to nearest hex
+    let rx = Math.round(q);
+    let rz = Math.round(r);
+    
+    return { x: rx, y: rz };
+  }
+
+  /**
+   * Get the height at a specific world position
+   * @param {THREE.Vector3} position - World position
+   * @returns {number} - Height at the position
+   */
+  getHeightAt(position) {
+    const tileCoords = this.worldToTile(position);
+    const posKey = `${tileCoords.x},${tileCoords.y}`;
+    
+    if (this.tileTypes.has(posKey)) {
+      return this.tileTypes.get(posKey).height;
+    }
+    
+    // Default height if not found
+    return 0;
+  }
+
+  /**
+   * Get a random walkable spawn position within the map
    * @returns {THREE.Vector3} - Spawn position
    */
   getRandomSpawnPosition() {
-    // Get a random angle and distance from center (not too close to edge)
-    const angle = Math.random() * Math.PI * 2;
-    const distance = Math.random() * (this.mapRadius * 0.7);
+    // Try to find a walkable position
+    for (let attempts = 0; attempts < 100; attempts++) {
+      // Get a random angle and distance from center (not too close to edge)
+      const angle = Math.random() * Math.PI * 2;
+      const distance = Math.random() * (this.mapRadius * 0.7);
+      
+      // Convert to cartesian coordinates
+      const x = Math.cos(angle) * distance;
+      const z = Math.sin(angle) * distance;
+      
+      // Create position vector
+      const position = new THREE.Vector3(x, 0, z);
+      
+      // Check if position is walkable
+      if (this.isWalkable(position)) {
+        // Get the correct height for this position
+        const height = this.getHeightAt(position);
+        position.y = height + 0.1; // Slightly above ground
+        return position;
+      }
+    }
     
-    // Convert to cartesian coordinates
-    const x = Math.cos(angle) * distance;
-    const z = Math.sin(angle) * distance;
+    // Fallback to center position if no walkable position found
+    console.warn('[TOURNAMENT MAP] Could not find walkable spawn position after 100 attempts, using center');
+    return new THREE.Vector3(0, this.MAX_HEIGHT * 0.5, 0);
+  }
+
+  /**
+   * Adjust a position to be walkable (for player movement)
+   * @param {THREE.Vector3} targetPosition - The desired position
+   * @param {THREE.Vector3} currentPosition - The current position
+   * @returns {THREE.Vector3} - Adjusted position that is walkable
+   */
+  adjustToWalkable(targetPosition, currentPosition) {
+    // If target is already walkable, return it
+    if (this.isWalkable(targetPosition)) {
+      // Adjust height to match terrain
+      const height = this.getHeightAt(targetPosition);
+      return new THREE.Vector3(targetPosition.x, height + 0.1, targetPosition.z);
+    }
     
-    // Return position slightly above ground
-    return new THREE.Vector3(x, this.MAX_HEIGHT * 0.5, z);
+    // If not walkable, find the closest walkable position
+    // This is a simple implementation - a more sophisticated approach would use pathfinding
+    
+    // Direction from current to target
+    const direction = new THREE.Vector3()
+      .subVectors(targetPosition, currentPosition)
+      .normalize();
+    
+    // Try different distances along this direction
+    for (let distance = 0; distance < targetPosition.distanceTo(currentPosition); distance += 0.5) {
+      const testPosition = new THREE.Vector3()
+        .copy(currentPosition)
+        .addScaledVector(direction, distance);
+      
+      if (this.isWalkable(testPosition)) {
+        // Adjust height to match terrain
+        const height = this.getHeightAt(testPosition);
+        testPosition.y = height + 0.1;
+        return testPosition;
+      }
+    }
+    
+    // If no walkable position found, return current position
+    return currentPosition;
+  }
+
+  /**
+   * Create debug visualization of walkable tiles
+   * Can be called from console for debugging: window.game.currentMap.visualizeWalkableTiles()
+   */
+  visualizeWalkableTiles() {
+    console.log('[MAP] Creating visualization of walkable tiles...');
+    
+    // Create a group to hold all markers
+    const markersGroup = new THREE.Group();
+    markersGroup.name = 'walkableTileMarkers';
+    
+    // Sample a subset of tiles to avoid too many markers
+    const samplingRate = 4; // Only visualize every 4th tile
+    let walkableCount = 0;
+    let nonWalkableCount = 0;
+    
+    // Iterate through stored tile types
+    this.tileTypes.forEach((tileInfo, posKey) => {
+      // Only process every nth tile to reduce visual clutter
+      if (Math.random() > 1/samplingRate) return;
+      
+      const position = tileInfo.position;
+      
+      // Create a marker based on walkability
+      const isWalkable = this.isWalkable(position);
+      
+      // Count walkable vs non-walkable
+      if (isWalkable) {
+        walkableCount++;
+      } else {
+        nonWalkableCount++;
+      }
+      
+      // Create a small cylinder as a marker
+      const geometry = new THREE.CylinderGeometry(0.1, 0.1, 0.2, 8);
+      const material = new THREE.MeshBasicMaterial({
+        color: isWalkable ? 0x00ff00 : 0xff0000, // Green for walkable, red for non-walkable
+        transparent: true,
+        opacity: 0.7
+      });
+      
+      const marker = new THREE.Mesh(geometry, material);
+      marker.position.set(position.x, position.y + 0.5, position.z); // Position just above tile
+      
+      markersGroup.add(marker);
+    });
+    
+    // Add to scene
+    renderer.addObject('walkableTileMarkers', markersGroup);
+    
+    console.log(`[MAP] Visualization created. Walkable: ${walkableCount}, Non-walkable: ${nonWalkableCount}`);
+    console.log('[MAP] To remove visualization, call: window.renderer.removeObject("walkableTileMarkers")');
+    
+    return markersGroup; // Return for potential further manipulation
+  }
+  
+  /**
+   * Test walkability at a specific position
+   * Can be called from console for debugging: window.game.currentMap.testWalkable(x, z)
+   * @param {number} x - X coordinate
+   * @param {number} z - Z coordinate
+   */
+  testWalkable(x, z) {
+    const position = new THREE.Vector3(x, 0, z);
+    
+    console.log(`[MAP] Testing walkability at (${x}, ${z}):`);
+    
+    // Check if within map radius
+    const posXZ = new THREE.Vector2(x, z);
+    const distanceFromCenter = posXZ.length();
+    console.log(`  - Distance from center: ${distanceFromCenter.toFixed(2)} (map radius: ${this.mapRadius})`);
+    
+    if (distanceFromCenter > this.mapRadius) {
+      console.log(`  - RESULT: Not walkable - outside map radius`);
+      return false;
+    }
+    
+    // Get tile coordinates
+    const tileCoords = this.worldToTile(position);
+    const posKey = `${tileCoords.x},${tileCoords.y}`;
+    console.log(`  - Tile coordinates: (${tileCoords.x}, ${tileCoords.y})`);
+    
+    // Check if we have tile data
+    if (this.tileTypes.has(posKey)) {
+      const tileInfo = this.tileTypes.get(posKey);
+      console.log(`  - Tile type: ${tileInfo.type}`);
+      console.log(`  - Tile height: ${tileInfo.height.toFixed(2)} (water height: ${this.WATER_HEIGHT})`);
+      
+      // Check water height
+      if (tileInfo.height <= this.WATER_HEIGHT) {
+        console.log(`  - RESULT: Not walkable - below water level`);
+        return false;
+      }
+      
+      // Check for obstacles
+      if (this.obstacleTypes.includes(tileInfo.type)) {
+        console.log(`  - RESULT: Not walkable - has obstacle (${tileInfo.type})`);
+        return false;
+      }
+      
+      // Walkable
+      console.log(`  - RESULT: Walkable`);
+      return true;
+    } else {
+      // No tile data
+      console.log(`  - No tile data found for this position`);
+      
+      // Fallback for positions within map
+      if (distanceFromCenter < this.mapRadius * 0.95) {
+        console.log(`  - RESULT: Walkable (fallback: well within map bounds)`);
+        return true;
+      } else {
+        console.log(`  - RESULT: Not walkable (too close to edge with no tile data)`);
+        return false;
+      }
+    }
   }
 }
 

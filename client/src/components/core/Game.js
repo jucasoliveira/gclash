@@ -45,116 +45,183 @@ class Game {
    * @returns {Game} - This instance for chaining
    */
   init(canvas) {
+    console.log('[GAME] Initializing game');
+    
+    // If already initialized, just return
     if (this.isInitialized) return this;
     
-    console.log('Initializing Guild Clash...');
-    
-    // Initialize systems
-    renderer.init(canvas);
-    inputManager.init();
-    entityManager.init();
-    
-    // Track current map
-    this.currentMap = null;
-    
-    // Initialize standard grid
-    grid.init();
-    this.currentMap = grid;
-    
-    webSocketManager.configure();
-    uiManager.init();
-    
-    // Set up UI event listeners
-    this._setupUIEvents();
-    
-    // Set up tournament events
-    this._setupTournamentEvents();
-    
-    // Set up event handlers for tournament events
-    this._setupTournamentEventHandlers();
-    
-    // Set up battle royale event handlers
-    this._setupBattleRoyaleEventHandlers();
-    
-    // Set up health pickup handler
-    this._setupHealthPickupHandler();
-    
-    // Listen for player health changes
-    eventBus.on('network.playerHealthChanged', (data) => {
-      if (this.player && data.id === this.player.id) {
-        console.log(`Game received health change for player: ${data.health}/${data.maxHealth}`);
-        this.updateHealthUI(data.health, data.maxHealth);
-      }
-    });
-    
-    // Listen for player attacks
-    eventBus.on('network.playerAttacked', (data) => {
-      // Process attacks that have been confirmed by the server or for backward compatibility
-      const shouldProcessAttack = data.inRange !== false;
-      
-      if (shouldProcessAttack) {
-        if (this.player && data.targetId === this.player.id) {
-          console.log(`Game received attack on player: ${data.damage} damage (inRange: ${data.inRange})`);
-          
-          // Update health directly if we have the player reference
-          if (this.player.health !== undefined) {
-            // Calculate new health
-            const newHealth = Math.max(0, this.player.health - data.damage);
-            
-            // Update UI immediately
-            this.updateHealthUI(newHealth, this.player.stats.health);
-            
-            // Also update the player object's health
-            this.player.health = newHealth;
-            
-            console.log(`Directly set player health to ${newHealth} from attack and updated UI`);
-            
-            // Force direct DOM update (bypass animation frames)
-            const healthFill = document.getElementById('health-fill');
-            if (healthFill) {
-              const percentage = Math.max(0, Math.min(100, (newHealth / this.player.stats.health) * 100));
-              healthFill.style.width = `${percentage}%`;
-              
-              // Change color based on health percentage
-              if (percentage > 60) {
-                healthFill.style.backgroundColor = '#2ecc71'; // Green for high health
-              } else if (percentage > 30) {
-                healthFill.style.backgroundColor = '#f39c12'; // Orange for medium health
-              } else {
-                healthFill.style.backgroundColor = '#e74c3c'; // Red for low health
-              }
-            }
-            
-            // Create a damage effect
-            if (typeof this.player._playDamageEffect === 'function') {
-              this.player._playDamageEffect();
-            }
+    try {
+      // Safe initialization of renderer
+      if (this.renderer) {
+        this.renderer.init(canvas);
+        
+        // Make renderer and camera globally accessible
+        window.renderer = this.renderer;
+        window.currentCamera = this.renderer && this.renderer.camera;
+        
+        // Make key functions globally accessible
+        window.updateCameraPosition = (position) => {
+          if (this.renderer) {
+            this.renderer.updateCameraPosition(position);
           }
-        }
+        };
       } else {
-        console.log('Received attack event with inRange=false - not applying damage');
+        console.error('[GAME] Renderer not available during initialization');
       }
-    });
-    
-    // Listen for missed attacks
-    eventBus.on('network.playerAttackMissed', (data) => {
-      // If we're the attacker, show feedback
-      if (this.player && data.id === this.player.id) {
-        console.log(`Game received attack missed notification: ${data.reason}`);
-        this.showAttackMissedFeedback(data.reason, data.distance, data.maxRange);
+      
+      // Initialize user interface with null check
+      if (this.uiManager && typeof this.uiManager.init === 'function') {
+        this.uiManager.init();
+      } else {
+        console.error('[GAME] UI Manager not available or missing init method');
       }
-    });
-    
-    // Set game state
-    this.state = 'characterSelection';
-    this._showCharacterSelection();
-    
-    // Initialize UI components
-    this._initializeUIComponents();
-    
-    this.isInitialized = true;
+      
+      // Initialize websocket connection with null check
+      if (this.networkManager && typeof this.networkManager.init === 'function') {
+        this.networkManager.init();
+      } else {
+        console.error('[GAME] Network Manager not available or missing init method');
+      }
+      
+      // Create a EntityManager for handling game entities
+      if (!entityManager) {
+        console.error('[GAME] Entity Manager not available');
+      } else {
+        this.entityManager = entityManager;
+        if (this.entityManager && typeof this.entityManager.init === 'function') {
+          this.entityManager.init();
+        }
+        window.entityManager = this.entityManager; // Make globally accessible
+      }
+      
+      console.log('Initializing Guild Clash...');
+      
+      // Initialize input manager if available
+      if (inputManager && typeof inputManager.init === 'function') {
+        inputManager.init();
+      } else {
+        console.warn('[GAME] Input Manager not available or missing init method');
+      }
+      
+      // Track current map
+      this.currentMap = null;
+      
+      // Initialize standard grid if available
+      if (grid && typeof grid.init === 'function') {
+        grid.init();
+        this.currentMap = grid;
+      } else {
+        console.warn('[GAME] Grid not available or missing init method');
+      }
+      
+      // Configure websocket if available
+      if (webSocketManager && typeof webSocketManager.configure === 'function') {
+        webSocketManager.configure();
+      } else {
+        console.warn('[GAME] WebSocket Manager not available or missing configure method');
+      }
+      
+      // Set up UI event listeners
+      this._setupUIEvents();
+      
+      // Set up tournament events
+      this._setupTournamentEvents();
+      
+      // Set up event handlers for tournament events
+      this._setupTournamentEventHandlers();
+      
+      // Set up battle royale event handlers
+      this._setupBattleRoyaleEventHandlers();
+      
+      // Set up health pickup handler
+      this._setupHealthPickupHandler();
+      
+      // Set up event listeners with null checks
+      this._setupEventListeners();
+      
+      this.isInitialized = true;
+      console.log('[GAME] Game initialized successfully');
+    } catch (error) {
+      console.error('[GAME] Error during initialization:', error);
+    }
     
     return this;
+  }
+
+  /**
+   * Set up additional event listeners with null checks
+   * @private
+   */
+  _setupEventListeners() {
+    // Listen for player health changes
+    if (eventBus) {
+      eventBus.on('network.playerHealthChanged', (data) => {
+        if (this.player && data.id === this.player.id) {
+          console.log(`Game received health change for player: ${data.health}/${data.maxHealth}`);
+          this.updateHealthUI(data.health, data.maxHealth);
+        }
+      });
+      
+      // Listen for player attacks
+      eventBus.on('network.playerAttacked', (data) => {
+        // Process attacks that have been confirmed by the server or for backward compatibility
+        const shouldProcessAttack = data.inRange !== false;
+        
+        if (shouldProcessAttack) {
+          if (this.player && data.targetId === this.player.id) {
+            console.log(`Game received attack on player: ${data.damage} damage (inRange: ${data.inRange})`);
+            
+            // Update health directly if we have the player reference
+            if (this.player.health !== undefined) {
+              // Calculate new health
+              const newHealth = Math.max(0, this.player.health - data.damage);
+              
+              // Update UI immediately
+              this.updateHealthUI(newHealth, this.player.stats.health);
+              
+              // Also update the player object's health
+              this.player.health = newHealth;
+              
+              console.log(`Directly set player health to ${newHealth} from attack and updated UI`);
+              
+              // Force direct DOM update (bypass animation frames)
+              const healthFill = document.getElementById('health-fill');
+              if (healthFill) {
+                const percentage = Math.max(0, Math.min(100, (newHealth / this.player.stats.health) * 100));
+                healthFill.style.width = `${percentage}%`;
+                
+                // Change color based on health percentage
+                if (percentage > 60) {
+                  healthFill.style.backgroundColor = '#2ecc71'; // Green for high health
+                } else if (percentage > 30) {
+                  healthFill.style.backgroundColor = '#f39c12'; // Orange for medium health
+                } else {
+                  healthFill.style.backgroundColor = '#e74c3c'; // Red for low health
+                }
+              }
+              
+              // Create a damage effect
+              if (typeof this.player._playDamageEffect === 'function') {
+                this.player._playDamageEffect();
+              }
+            }
+          }
+        } else {
+          console.log('Received attack event with inRange=false - not applying damage');
+        }
+      });
+      
+      // Listen for missed attacks
+      eventBus.on('network.playerAttackMissed', (data) => {
+        // If we're the attacker, show feedback
+        if (this.player && data.id === this.player.id) {
+          console.log(`Game received attack missed notification: ${data.reason}`);
+          this.showAttackMissedFeedback(data.reason, data.distance, data.maxRange);
+        }
+      });
+    } else {
+      console.error('[GAME] Event bus not available during initialization');
+    }
   }
 
   /**

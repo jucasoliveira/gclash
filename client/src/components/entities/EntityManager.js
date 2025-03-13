@@ -99,6 +99,22 @@ class EntityManager {
     const player = new Player(id, classType, stats);
     player.init();
     
+    // Set initial position based on game mode
+    const currentMap = window.game?.currentMap;
+    if (currentMap && window.game?.gameMode === 'tournament' && typeof currentMap.getRandomSpawnPosition === 'function') {
+      // Get a random walkable spawn position
+      const spawnPosition = currentMap.getRandomSpawnPosition();
+      console.log(`[ENTITY MANAGER] Spawning player at walkable position: (${spawnPosition.x.toFixed(2)}, ${spawnPosition.y.toFixed(2)}, ${spawnPosition.z.toFixed(2)})`);
+      
+      // Set player position
+      player.position.copy(spawnPosition);
+      
+      // Update mesh position
+      if (player.mesh) {
+        player.mesh.position.copy(spawnPosition);
+      }
+    }
+    
     // Add to entities
     this.addEntity(player);
     this.player = player;
@@ -142,11 +158,34 @@ class EntityManager {
       
       // Update position if provided
       if (playerData.position) {
-        existingPlayer.position.set(
+        // Check if we need to adjust position for walkable tiles
+        let newPosition = new THREE.Vector3(
           playerData.position.x || 0,
           playerData.position.y || 0.8,
           playerData.position.z || 0
         );
+        
+        // Adjust position for walkable tiles if in tournament mode
+        const currentMap = window.game?.currentMap;
+        if (currentMap && window.game?.gameMode === 'tournament' && typeof currentMap.isWalkable === 'function') {
+          if (!currentMap.isWalkable(newPosition)) {
+            // Find nearest walkable position
+            const adjustedPosition = currentMap.adjustToWalkable(newPosition, existingPlayer.position);
+            if (adjustedPosition) {
+              newPosition = adjustedPosition;
+            }
+          } else {
+            // Position is walkable, adjust height to match terrain
+            const height = currentMap.getHeightAt(newPosition);
+            newPosition.y = height + 0.1; // Slightly above ground
+          }
+        }
+        
+        // Set the adjusted position
+        existingPlayer.position.copy(newPosition);
+        
+        // Update target position for interpolation
+        existingPlayer.targetPosition = newPosition.clone();
       }
       
       // Update health if provided and health bar exists
@@ -162,6 +201,21 @@ class EntityManager {
     if (!playerData.position) {
       playerData.position = { x: 0, y: 0.8, z: 0 };
       console.log(`[ENTITY] Added default position for player ${playerData.id}`);
+    }
+    
+    // Check if we're in tournament mode and should adjust spawn position
+    const currentMap = window.game?.currentMap;
+    if (currentMap && window.game?.gameMode === 'tournament' && typeof currentMap.getRandomSpawnPosition === 'function') {
+      // Get a random walkable spawn position
+      const spawnPosition = currentMap.getRandomSpawnPosition();
+      console.log(`[ENTITY] Adjusting spawn position for player ${playerData.id} to walkable position: (${spawnPosition.x.toFixed(2)}, ${spawnPosition.y.toFixed(2)}, ${spawnPosition.z.toFixed(2)})`);
+      
+      // Update player data position
+      playerData.position = {
+        x: spawnPosition.x,
+        y: spawnPosition.y,
+        z: spawnPosition.z
+      };
     }
     
     // Ensure player has class data
@@ -224,11 +278,33 @@ class EntityManager {
     
     // Set initial position
     if (playerData.position) {
-      otherPlayer.position.set(
+      // Check if we need to adjust position for walkable tiles
+      let newPosition = new THREE.Vector3(
         playerData.position.x || 0,
         playerData.position.y || 0.8,
         playerData.position.z || 0
       );
+      
+      // Adjust position for walkable tiles if in tournament mode
+      if (currentMap && window.game?.gameMode === 'tournament' && typeof currentMap.isWalkable === 'function') {
+        if (!currentMap.isWalkable(newPosition)) {
+          // Find nearest walkable position
+          const adjustedPosition = currentMap.adjustToWalkable(newPosition, new THREE.Vector3(0, 0, 0));
+          if (adjustedPosition) {
+            newPosition = adjustedPosition;
+          }
+        } else {
+          // Position is walkable, adjust height to match terrain
+          const height = currentMap.getHeightAt(newPosition);
+          newPosition.y = height + 0.1; // Slightly above ground
+        }
+      }
+      
+      // Set the adjusted position
+      otherPlayer.position.copy(newPosition);
+      
+      // Update target position for interpolation
+      otherPlayer.targetPosition = newPosition.clone();
     }
     
     // Add to entity manager
