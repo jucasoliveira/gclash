@@ -175,6 +175,91 @@ class Game {
       // Store reference locally
       this.physicsWorld = world;
       
+      // Expose a helper method to toggle all physics debug visualizations
+      window.toggleAllPhysicsDebug = (visible = true) => {
+        console.log(`[GAME] Setting all physics debug visualizations to ${visible ? 'visible' : 'hidden'}`);
+        
+        let successCount = 0;
+        
+        // Toggle terrain physics visualization
+        if (typeof window.togglePhysicsDebug === 'function') {
+          try {
+            window.togglePhysicsDebug(visible);
+            successCount++;
+          } catch (error) {
+            console.error('[GAME] Error toggling terrain physics visualization:', error);
+          }
+        } else {
+          console.warn('[GAME] togglePhysicsDebug function not available');
+          
+          // Try to directly find and toggle physics objects in the scene
+          if (window.renderer && window.renderer.scene) {
+            ['physicsHexGroup', 'physicsBoundaryMesh', 'physicsWallMesh'].forEach(objName => {
+              const obj = window.renderer.scene.getObjectByName(objName);
+              if (obj) {
+                obj.visible = visible;
+                console.log(`[GAME] Found ${objName} and set visibility to ${visible}`);
+                successCount++;
+              }
+            });
+          }
+        }
+        
+        // Toggle player physics visualization
+        if (typeof window.togglePlayerPhysicsDebug === 'function') {
+          try {
+            window.togglePlayerPhysicsDebug(visible);
+            successCount++;
+          } catch (error) {
+            console.error('[GAME] Error toggling player physics visualization:', error);
+          }
+        } else {
+          console.warn('[GAME] togglePlayerPhysicsDebug function not available');
+          
+          // Attempt to find character physics debug object directly
+          if (window.renderer && window.renderer.scene) {
+            const charDebug = window.renderer.scene.getObjectByName('characterPhysicsDebug');
+            if (charDebug) {
+              charDebug.visible = visible;
+              charDebug.renderOrder = 9999; // Ensure it renders above other objects
+              console.log('[GAME] Found character physics debug object, set visibility to', visible);
+              successCount++;
+            }
+          }
+        }
+        
+        // As a last resort, traverse the entire scene looking for debug objects
+        if (successCount === 0 && window.renderer && window.renderer.scene) {
+          console.log('[GAME] No toggle functions worked, traversing scene to find physics debug objects...');
+          
+          window.renderer.scene.traverse(object => {
+            const name = object.name || '';
+            if (name.includes('physics') || name.includes('Physics')) {
+              object.visible = visible;
+              if (name.includes('character') || name.includes('Character')) {
+                object.renderOrder = 9999; // Ensure character physics renders on top
+              }
+              console.log(`[GAME] Found ${name} and set visibility to ${visible}`);
+              successCount++;
+            }
+          });
+        }
+        
+        if (successCount > 0) {
+          console.log(`[GAME] Successfully toggled ${successCount} physics debug visualizations`);
+        } else {
+          console.warn('[GAME] Failed to toggle any physics debug visualizations. Make sure the player and map are loaded first.');
+        }
+        
+        // Force render to update visibility changes
+        if (window.renderer && typeof window.renderer.render === 'function') {
+          window.renderer.render();
+        }
+        
+        return `Physics debug visualization set to ${visible ? 'visible' : 'hidden'} (${successCount} objects affected)`;
+      };
+      
+      console.log('[GAME] Physics debug helper exposed as window.toggleAllPhysicsDebug(true/false)');
       console.log('[GAME] Rapier physics engine initialized successfully');
     } catch (error) {
       console.error('[GAME] Error initializing Rapier physics engine:', error);

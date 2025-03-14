@@ -1,0 +1,8 @@
+// Toggle all physics debug visualizations
+window.toggleAllPhysicsDebug(true);
+
+// Toggle only character physics
+window.togglePlayerPhysicsDebug(true);
+
+// Toggle only terrain physics
+window.togglePhysicsDebug(true);

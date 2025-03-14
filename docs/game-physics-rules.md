@@ -87,7 +87,7 @@ Move the kinematic body based on user input, and update the character’s visual
 
 Implementation
 
-- Calculate movement from user input (e.g., WASD keys).
+- Calculate movement from user input (e.g., mouse point and click).
 - Use setNextKinematicTranslation to update the kinematic body’s position.
 - Sync the character mesh position with the kinematic body.
 

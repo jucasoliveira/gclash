@@ -617,8 +617,14 @@ class TournamentMap {
    * @param {Array} hexColliders - Array of hex collider information
    */
   createHexPhysicsVisualization(hexColliders) {
+    if (!window.renderer) {
+      console.error('[TOURNAMENT MAP] Cannot create hex physics visualization - renderer not available');
+      return;
+    }
+
     // Create a group to hold all hex debug geometries
     const hexGroup = new THREE.Group();
+    hexGroup.name = 'physicsHexGroup';
     
     // Iterate through all hex colliders and create visual representation
     hexColliders.forEach((collider, index) => {
@@ -665,7 +671,7 @@ class TournamentMap {
     });
     
     // Add the group to the scene
-    renderer.addObject('physicsHexGroup', hexGroup);
+    window.renderer.addObject('physicsHexGroup', hexGroup);
     this.objects.push(hexGroup);
     
     // Create an overall red wireframe cylinder to show the walkable area boundary
@@ -686,8 +692,9 @@ class TournamentMap {
     
     const boundaryMesh = new THREE.Mesh(boundaryGeometry, boundaryMaterial);
     boundaryMesh.position.y = 0.05; // Just above ground
+    boundaryMesh.name = 'physicsBoundaryMesh';
     
-    renderer.addObject('physicsBoundaryMesh', boundaryMesh);
+    window.renderer.addObject('physicsBoundaryMesh', boundaryMesh);
     this.objects.push(boundaryMesh);
     
     console.log('[TOURNAMENT MAP] Hex physics debug visualization created');
@@ -700,6 +707,11 @@ class TournamentMap {
    * @param {number} thickness - Thickness of the wall
    */
   createWallColliderVisualization(radius, height, thickness) {
+    if (!window.renderer) {
+      console.error('[TOURNAMENT MAP] Cannot create wall collider visualization - renderer not available');
+      return;
+    }
+    
     // Create a cylinder geometry for the wall visualization
     // Use a slightly larger radius for the outer wall to make it visible
     const outerRadius = radius + thickness/2;
@@ -726,12 +738,13 @@ class TournamentMap {
     
     // Create the mesh
     const wallMesh = new THREE.Mesh(wallGeometry, wallMaterial);
+    wallMesh.name = 'physicsWallMesh';
     
     // Position it at the correct height (half height from ground)
     wallMesh.position.y = height / 2;
     
     // Add to scene
-    renderer.addObject('physicsWallMesh', wallMesh);
+    window.renderer.addObject('physicsWallMesh', wallMesh);
     
     // Store for cleanup
     this.objects.push(wallMesh);
@@ -744,23 +757,45 @@ class TournamentMap {
    * @param {boolean} visible - Whether the physics debug visualization should be visible
    */
   togglePhysicsDebug(visible) {
-    const hexGroup = renderer.getObjectByName('physicsHexGroup');
-    const boundaryMesh = renderer.getObjectByName('physicsBoundaryMesh');
-    const wallMesh = renderer.getObjectByName('physicsWallMesh');
-    
-    if (hexGroup) {
-      hexGroup.visible = visible;
+    // Fix for the getObjectByName error
+    try {
+      // First try direct scene access if available
+      if (window.renderer && window.renderer.scene) {
+        const hexGroup = window.renderer.scene.getObjectByName('physicsHexGroup');
+        const boundaryMesh = window.renderer.scene.getObjectByName('physicsBoundaryMesh');
+        const wallMesh = window.renderer.scene.getObjectByName('physicsWallMesh');
+        
+        if (hexGroup) {
+          hexGroup.visible = visible;
+          console.log(`[TOURNAMENT MAP] Physics hex group visibility set to ${visible}`);
+        }
+        
+        if (boundaryMesh) {
+          boundaryMesh.visible = visible;
+          console.log(`[TOURNAMENT MAP] Physics boundary visibility set to ${visible}`);
+        }
+        
+        if (wallMesh) {
+          wallMesh.visible = visible;
+          console.log(`[TOURNAMENT MAP] Physics wall visibility set to ${visible}`);
+        }
+      } else {
+        // Fallback to direct object references
+        // This assumes these objects are stored in this.objects array
+        this.objects.forEach(obj => {
+          if (obj.name === 'physicsHexGroup' || 
+              obj.name === 'physicsBoundaryMesh' || 
+              obj.name === 'physicsWallMesh') {
+            obj.visible = visible;
+            console.log(`[TOURNAMENT MAP] Set ${obj.name} visibility to ${visible}`);
+          }
+        });
+      }
+      
+      console.log(`[TOURNAMENT MAP] Physics debug visualization ${visible ? 'shown' : 'hidden'}`);
+    } catch (error) {
+      console.error('[TOURNAMENT MAP] Error toggling physics debug:', error);
     }
-    
-    if (boundaryMesh) {
-      boundaryMesh.visible = visible;
-    }
-    
-    if (wallMesh) {
-      wallMesh.visible = visible;
-    }
-    
-    console.log(`[TOURNAMENT MAP] Physics debug visualization ${visible ? 'shown' : 'hidden'}`);
   }
 
   /**

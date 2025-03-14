@@ -3,6 +3,7 @@ import Entity from './Entity.js';
 import eventBus from '../core/EventBus.js';
 import webSocketManager from '../network/WebSocketManager.js';
 import game from '../core/Game.js';
+import CharacterPhysics from './CharacterPhysics.js';
 
 /**
  * Player - Represents the local player in the game
@@ -53,6 +54,9 @@ class Player extends Entity {
     this.evadeCooldown = 0; // New property for evade cooldown
     this.isAttacking = false;
     this.primaryAttack = stats.abilities.primary;
+    
+    // Physics body for the character (will be initialized in init)
+    this.physicsBody = null;
     
     // Event bindings
     this._boundHandleMoveForward = this._handleMoveForward.bind(this);
@@ -113,6 +117,9 @@ class Player extends Entity {
     
     // Force update health UI to ensure it's properly set at start
     this._updateHealthUI();
+    
+    // Initialize physics body after mesh is created
+    this._initializePhysics();
     
     return this;
   }
@@ -281,137 +288,83 @@ class Player extends Entity {
   }
 
   /**
-   * Handle player movement based on mouse click
-   * @param {Object} data - Click data with position and ndc coordinates
+   * Handle move event (click to move)
+   * @param {Object} data - Position data
    * @private
    */
   _handleMove(data) {
     // Skip if no data
     if (!data) return;
     
-    // Skip if we're attacking
-    if (this.isAttacking) {
-      console.log('Not moving - currently attacking');
-      return;
+    // Get position from click
+    const position = new THREE.Vector3(data.x, 0, data.z);
+    
+    // Store the target position for ongoing movement
+    this.targetPosition = position.clone();
+    
+    // Tell physics body about the target position if available
+    if (this.physicsBody) {
+      this.physicsBody.setTargetPosition(position);
     }
     
-    // Skip if dead
-    if (this.isDead) {
-      console.log('Not moving - player is dead');
-      return;
+    // Check if position is walkable (uses map's isWalkable function)
+    let isWalkable = true;
+    if (window.game && window.game.currentMap) {
+      isWalkable = window.game.currentMap.isWalkable(position);
     }
     
-    // Check if we have normalized device coordinates
-    if (!data.ndc || data.ndc.x === undefined || data.ndc.y === undefined) {
-      console.warn('Missing normalized device coordinates in move data');
-      return;
-    }
-    
-    // Create a raycaster for ground detection
-    const raycaster = new THREE.Raycaster();
-    
-    // Ensure we have a valid camera
-    if (!window.currentCamera) {
-      window.currentCamera = window.game?.renderer?.camera;
-      if (!window.currentCamera) {
-        console.error('No camera available for raycasting');
-        return;
-      }
-    }
-    
-    // Set raycaster from camera using NDC
-    raycaster.setFromCamera(data.ndc, window.currentCamera);
-    
-    // Create an array of intersectable objects that represent the ground
-    const intersectObjects = [];
-    
-    // Add the map floor to intersectables if available
-    const mapFloor = window.game?.renderer.getObject('mapFloor');
-    if (mapFloor) {
-      intersectObjects.push(mapFloor);
-    }
-    
-    // Also try stone, sand, grass meshes
-    ['stoneMesh', 'grassMesh', 'dirt2Mesh', 'dirtMesh', 'sandMesh'].forEach(meshName => {
-      const mesh = window.game?.renderer.getObject(meshName);
-      if (mesh) {
-        intersectObjects.push(mesh);
-      }
-    });
-    
-    let position = null;
-    let intersections = [];
-    
-    // First try to intersect with actual terrain objects
-    if (intersectObjects.length > 0) {
-      intersections = raycaster.intersectObjects(intersectObjects, false);
+    if (!isWalkable) {
+      console.log('[MOVEMENT] Target position is not walkable, finding alternative');
       
-      if (intersections.length > 0) {
-        // Use the closest intersection
-        const intersection = intersections[0];
-        position = intersection.point.clone();
-        console.log(`Intersected with ${intersection.object.name || 'unnamed object'} at ${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)}`);
-      }
-    }
-    
-    // If no intersections with terrain, use a plane at player's height as fallback
-    if (!position) {
-      const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -this.position.y);
-      const intersection = new THREE.Vector3();
-      
-      if (raycaster.ray.intersectPlane(groundPlane, intersection)) {
-        position = intersection.clone();
-        console.log(`Using ground plane intersection at ${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)}`);
+      // If not walkable, try to find a walkable point nearby
+      if (window.game && window.game.currentMap && window.game.currentMap.adjustToWalkable) {
+        // Get current position for reference
+        const currentPos = this.position.clone();
+        
+        // Try to find a walkable position near the clicked point
+        const adjustedPosition = window.game.currentMap.adjustToWalkable(position, currentPos);
+        
+        if (adjustedPosition) {
+          console.log('[MOVEMENT] Found walkable alternative', adjustedPosition);
+          position.copy(adjustedPosition);
+          this.targetPosition = position.clone();
+          
+          // Update physics target if available
+          if (this.physicsBody) {
+            this.physicsBody.setTargetPosition(position);
+          }
+          
+          isWalkable = true;
+        } else {
+          console.log('[MOVEMENT] No walkable alternative found');
+          this._createNonWalkableIndicator(position);
+          return; // Exit if no walkable alternative
+        }
       } else {
-        console.warn('Failed to intersect with ground plane');
-        return;
+        console.log('[MOVEMENT] Cannot adjust position - map functions not available');
+        this._createNonWalkableIndicator(position);
+        return; // Exit if cannot adjust
       }
     }
-    
-    if (!position) {
-      console.error('Could not determine target position');
-      return;
-    }
-    
-    // Get current map
-    const currentMap = window.game?.currentMap;
-    
-    // Adjust height based on terrain if possible
-    if (currentMap && typeof currentMap.getHeightAt === 'function') {
-      const terrainHeight = currentMap.getHeightAt(position);
-      if (terrainHeight !== undefined) {
-        position.y = terrainHeight + 0.1; // Slightly above terrain
-      }
-    }
-    
-    // Log movement details
-    console.log(`Moving to position: (${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)})`);
-    console.log(`Current position: (${this.position.x.toFixed(2)}, ${this.position.y.toFixed(2)}, ${this.position.z.toFixed(2)})`);
-    const distance = this.position.distanceTo(position);
-    console.log(`Distance to click: ${distance.toFixed(2)} units`);
     
     // Create movement indicator at clicked position
     this._createMovementIndicator(position);
     
-    // Set target position directly with no walkable check (for simplicity)
-    this.targetPosition = position.clone();
-    
     // Clear any existing path
-    this.walkablePath = null;
+    this.pathfindingPath = [];
     
-    // Start mouse movement
+    // Set mouse movement flag
     this.isMouseMoving = true;
     
-    // Reset WASD movement since mouse movement takes priority
-    this.movementDirection.set(0, 0, 0);
-    
-    // Force mesh to update position (if it exists)
-    if (this.mesh) {
-      this.mesh.position.copy(this.position);
-    }
-    
-    // Emit movement event
-    eventBus.emit('player.moveStart', { targetPosition: this.targetPosition.clone() });
+    // Emit movement event to server
+    webSocketManager.movePlayer({
+      id: this.id,
+      targetPosition: {
+        x: position.x,
+        y: position.y,
+        z: position.z
+      }
+    });
   }
   
   /**
@@ -832,12 +785,17 @@ class Player extends Entity {
     // Ensure a reasonable deltaTime (prevent extremely small values)
     const safeDeltatime = Math.max(deltaTime, 0.016); // Force minimum 16ms (~60 FPS)
     
-    // Update height based on terrain to ensure player stays on top of tiles
-    this._updateHeightBasedOnTerrain();
-    
-    // Make sure mesh follows player position (crucial for visual rendering)
-    if (this.mesh) {
-      this.mesh.position.copy(this.position);
+    // Update physics body if available
+    if (this.physicsBody) {
+      this.physicsBody.update(safeDeltatime);
+    } else {
+      // Fall back to the old height-based terrain adjustment if physics not available
+      this._updateHeightBasedOnTerrain();
+      
+      // Make sure mesh follows player position (crucial for visual rendering)
+      if (this.mesh) {
+        this.mesh.position.copy(this.position);
+      }
     }
     
     // Handle mouse-driven movement (click to move)
@@ -870,63 +828,41 @@ class Player extends Entity {
         // Update position
         this.position.copy(newPosition);
         
-        // Update mesh position
-        if (this.mesh) {
+        // Update mesh position (if not using physics)
+        if (this.mesh && !this.physicsBody) {
           this.mesh.position.copy(this.position);
-          
-          // Rotate mesh to face movement direction
-          const targetRotation = Math.atan2(direction.x, direction.z);
-          const currentRotation = this.mesh.rotation.y;
-          const rotationDifference = this._getAngleDifference(currentRotation, targetRotation);
-          
-          // Apply smooth rotation
-          this.mesh.rotation.y += rotationDifference * 0.1;
         }
-      }
-    }
-    
-    // Handle keyboard movement (WASD)
-    if (this.isMoving && this.movementDirection.length() > 0) {
-      // Normalize movement direction
-      const normalizedDirection = this.movementDirection.clone().normalize();
-      
-      // Calculate movement distance
-      const moveDistance = this.stats.speed * safeDeltatime * 40;
-      
-      // Calculate new position
-      const newPosition = new THREE.Vector3()
-        .copy(this.position)
-        .addScaledVector(normalizedDirection, moveDistance);
-      
-      // Update position
-      this.position.copy(newPosition);
-      
-      // Update mesh position
-      if (this.mesh) {
-        this.mesh.position.copy(this.position);
         
-        // Rotate mesh to face movement direction
-        const targetRotation = Math.atan2(normalizedDirection.x, normalizedDirection.z);
-        const currentRotation = this.mesh.rotation.y;
-        const rotationDifference = this._getAngleDifference(currentRotation, targetRotation);
+        // Rotate character to face movement direction
+        if (this.mesh) {
+          const targetRotation = Math.atan2(direction.x, direction.z);
+          this.mesh.rotation.y = this._getAngleDifference(this.mesh.rotation.y, targetRotation) * 0.1 + this.mesh.rotation.y;
+        }
         
-        // Apply smooth rotation
-        this.mesh.rotation.y += rotationDifference * 0.1;
+        // Emit position update to network
+        webSocketManager.updatePlayerPosition({
+          id: this.id,
+          position: {
+            x: this.position.x,
+            y: this.position.y,
+            z: this.position.z
+          },
+          rotation: this.mesh ? this.mesh.rotation.y : 0
+        });
       }
-    }
-    
-    // Update camera position to follow player
-    if (this.isMainPlayer && typeof window.updateCameraPosition === 'function') {
-      window.updateCameraPosition(this.position);
-    } else if (this.isMainPlayer && window.game?.renderer?.updateCameraPosition) {
-      window.game.renderer.updateCameraPosition(this.position);
     }
     
     // Regenerate mana over time
     this._regenerateMana(safeDeltatime);
     
-    // Update cooldowns
-    this._updateCooldownUI();
+    // Update attack cooldown
+    if (this.attackCooldown > 0) {
+      this.attackCooldown -= safeDeltatime;
+      if (this.attackCooldown <= 0) {
+        this.attackCooldown = 0;
+        this._updateCooldownUI();
+      }
+    }
   }
   
   /**
@@ -1791,28 +1727,28 @@ class Player extends Entity {
    * Clean up resources
    */
   destroy() {
-    // Remove event listeners
-    eventBus.off('input.move.forward.start', this._boundHandleMoveForward);
-    eventBus.off('input.move.backward.start', this._boundHandleMoveBackward);
-    eventBus.off('input.move.left.start', this._boundHandleMoveLeft);
-    eventBus.off('input.move.right.start', this._boundHandleMoveRight);
+    console.log(`[PLAYER] Destroying player ${this.id} (${this.classType})`);
     
-    eventBus.off('input.move.forward.end', this._boundHandleMoveForwardEnd);
-    eventBus.off('input.move.backward.end', this._boundHandleMoveBackwardEnd);
-    eventBus.off('input.move.left.end', this._boundHandleMoveLeftEnd);
-    eventBus.off('input.move.right.end', this._boundHandleMoveRightEnd);
+    // Dispose of physics body if it exists
+    if (this.physicsBody) {
+      this.physicsBody.dispose();
+      this.physicsBody = null;
+    }
     
-    // Remove new event listeners
-    eventBus.off('input.move', this._boundHandleMove);
-    eventBus.off('input.click', this._boundHandleAttack);
-    eventBus.off('input.coreSkill', this._boundHandleCoreSkill);
-    eventBus.off('input.action.evade.start', this._boundHandleEvade);
-    
-    // Remove skill slot event listeners
-    eventBus.off('input.skill.slot1.start', this._boundHandleSkill1);
-    eventBus.off('input.skill.slot2.start', this._boundHandleSkill2);
-    eventBus.off('input.skill.slot3.start', this._boundHandleSkill3);
-    eventBus.off('input.skill.slot4.start', this._boundHandleSkill4);
+    // Remove all event listeners
+    eventBus.off(`input.moveForward.${this.id}`);
+    eventBus.off(`input.moveBackward.${this.id}`);
+    eventBus.off(`input.moveLeft.${this.id}`);
+    eventBus.off(`input.moveRight.${this.id}`);
+    eventBus.off(`input.moveForwardEnd.${this.id}`);
+    eventBus.off(`input.moveBackwardEnd.${this.id}`);
+    eventBus.off(`input.moveLeftEnd.${this.id}`);
+    eventBus.off(`input.moveRightEnd.${this.id}`);
+    eventBus.off(`input.move.${this.id}`);
+    eventBus.off(`input.evade.${this.id}`);
+    eventBus.off(`input.coreSkill.${this.id}`);
+    eventBus.off(`input.skill.${this.id}`);
+    eventBus.off(`network.playerAttacked.${this.id}`);
     
     // Call base entity destroy
     super.destroy();
@@ -1951,24 +1887,6 @@ class Player extends Entity {
         }
       }, 300);
     }, 50);
-    
-    // Shake the camera slightly
-    if (window.currentCamera) {
-      const originalPosition = window.currentCamera.position.clone();
-      const shakeAmount = 0.1;
-      
-      // Small random offset
-      window.currentCamera.position.x += (Math.random() - 0.5) * shakeAmount;
-      window.currentCamera.position.y += (Math.random() - 0.5) * shakeAmount;
-      window.currentCamera.position.z += (Math.random() - 0.5) * shakeAmount;
-      
-      // Reset camera position after a short delay
-      setTimeout(() => {
-        if (window.currentCamera) {
-          window.currentCamera.position.copy(originalPosition);
-        }
-      }, 100);
-    }
   }
 
   /**
@@ -2002,6 +1920,76 @@ class Player extends Entity {
         }
       }
     }
+  }
+
+  /**
+   * Initialize physics body for the player
+   * @private
+   */
+  _initializePhysics() {
+    // Ensure mesh is created first
+    if (!this.mesh) {
+      console.warn('[PLAYER] Cannot initialize physics - mesh not yet created');
+      return;
+    }
+    
+    // Get character dimensions from the mesh
+    const bbox = new THREE.Box3().setFromObject(this.mesh);
+    const size = new THREE.Vector3();
+    bbox.getSize(size);
+    
+    // Log the actual mesh dimensions for debugging
+    console.log(`[PLAYER PHYSICS] Character mesh dimensions: ${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)}`);
+    
+    // Safety check for valid dimensions
+    if (size.y < 0.5 || size.x < 0.1 || size.z < 0.1) {
+      console.warn(`[PLAYER] Detected unusually small character dimensions: ${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)}, using defaults`);
+      size.set(0.8, 1.6, 0.8); // Default dimensions that won't cause issues
+    }
+    
+    // Make the character physics capsule a bit larger than the mesh to prevent clipping
+    // This is especially important for character meshes that have parts that extend outside their center
+    const characterHeight = size.y * 1.1; // 10% taller
+    
+    // Use a reasonable radius based on character width, but not too small
+    // For a good envelope, make it larger than the mesh width
+    const characterRadius = Math.max(0.35, Math.max(size.x, size.z) / 2) * 1.2; // 20% wider
+    
+    // Create physics body with explicit parameters for better debugging
+    this.physicsBody = new CharacterPhysics({
+      characterMesh: this.mesh,
+      initialPosition: this.position.clone(), // Clone to avoid reference issues
+      characterHeight: characterHeight,
+      characterRadius: characterRadius
+    });
+    
+    console.log(`[PLAYER] Physics body initialized with height ${characterHeight.toFixed(2)} and radius ${characterRadius.toFixed(2)}`);
+    console.log(`[PLAYER] Initial position: (${this.position.x.toFixed(2)}, ${this.position.y.toFixed(2)}, ${this.position.z.toFixed(2)})`);
+    
+    // Expose physics debug toggle globally with more detailed info
+    window.togglePlayerPhysicsDebug = (visible) => {
+      if (this.physicsBody) {
+        this.physicsBody.toggleDebug(visible);
+        console.log(`[PLAYER] Physics debug visualization ${visible ? 'enabled' : 'disabled'}`);
+        
+        // Log position for debugging
+        if (visible && this.physicsBody.debugMesh) {
+          const pos = this.physicsBody.debugMesh.position;
+          console.log(`[PLAYER] Physics debug position: (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
+        }
+        
+        return true;
+      }
+      console.warn('[PLAYER] Cannot toggle physics debug - physics body not initialized');
+      return false;
+    };
+    
+    // Enable debug visualization by default for testing
+    if (this.physicsBody) {
+      this.physicsBody.toggleDebug(true);
+    }
+    
+    console.log('[PLAYER] Physics debug toggle exposed as window.togglePlayerPhysicsDebug(true/false)');
   }
 }
 
