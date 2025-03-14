@@ -532,6 +532,13 @@ class TournamentMap {
   createPhysicsTerrain() {
     if (!window.RAPIER) {
       console.warn('[TOURNAMENT MAP] Rapier physics not available, skipping physics terrain');
+      
+      // Listen for physics initialized event and try again
+      eventBus.once('physics.initialized', () => {
+        console.log('[TOURNAMENT MAP] Physics now available, creating terrain physics');
+        this.createPhysicsTerrain();
+      });
+      
       return;
     }
     
@@ -540,6 +547,13 @@ class TournamentMap {
     
     if (!world) {
       console.warn('[TOURNAMENT MAP] Physics world not available, skipping physics terrain');
+      
+      // Listen for physics initialized event and try again
+      eventBus.once('physics.initialized', () => {
+        console.log('[TOURNAMENT MAP] Physics world now available, creating terrain physics');
+        this.createPhysicsTerrain();
+      });
+      
       return;
     }
     

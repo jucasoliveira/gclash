@@ -27,6 +27,9 @@ class Player extends Entity {
     this.isMoving = false;
     this.movementDirection = new THREE.Vector3();
     
+    // Set this as the local player
+    this.isLocalPlayer = true;
+    
     // Mouse movement properties
     this.targetPosition = null;
     this.isMouseMoving = false;
@@ -121,6 +124,12 @@ class Player extends Entity {
     // Initialize physics body after mesh is created
     this._initializePhysics();
     
+    // Schedule a check for terrain meshes availability, to ensure movement works
+    // even if physics initialization hasn't completed yet
+    setTimeout(() => {
+      this._ensureTerrainMeshesAvailable();
+    }, 1000);
+    
     return this;
   }
   
@@ -171,6 +180,48 @@ class Player extends Entity {
     
     this.createMesh(geometry, material);
     this.setPosition(2, 0.8, 2); // Default position
+    
+    // Initialize animations for the box mesh
+    // This is a temporary solution until we have proper character models
+    if (!this.mixer && this.mesh) {
+      console.log('[PLAYER] Initializing basic animations for box mesh');
+      
+      // Create a simple animation mixer
+      this.mixer = new THREE.AnimationMixer(this.mesh);
+      
+      // Create dummy animations
+      const idleTrack = new THREE.AnimationClip('idle', 1, [
+        new THREE.KeyframeTrack(
+          '.rotation[y]',
+          [0, 0.5, 1],
+          [0, 0.05, 0]
+        )
+      ]);
+      
+      const runTrack = new THREE.AnimationClip('run', 0.5, [
+        new THREE.KeyframeTrack(
+          '.position[y]',
+          [0, 0.25, 0.5],
+          [this.mesh.position.y, this.mesh.position.y + 0.1, this.mesh.position.y]
+        )
+      ]);
+      
+      // Store animations
+      this.animations = {
+        'idle': this.mixer.clipAction(idleTrack),
+        'run': this.mixer.clipAction(runTrack)
+      };
+      
+      // Set loop modes
+      this.animations['idle'].setLoop(THREE.LoopRepeat);
+      this.animations['run'].setLoop(THREE.LoopRepeat);
+      
+      // Start with idle animation
+      this.animations['idle'].play();
+      this.currentAnimation = this.animations['idle'];
+      
+      console.log('[PLAYER] Basic animations initialized');
+    }
   }
 
   /**
@@ -293,78 +344,267 @@ class Player extends Entity {
    * @private
    */
   _handleMove(data) {
-    // Skip if no data
-    if (!data) return;
-    
-    // Get position from click
-    const position = new THREE.Vector3(data.x, 0, data.z);
-    
-    // Store the target position for ongoing movement
-    this.targetPosition = position.clone();
-    
-    // Tell physics body about the target position if available
-    if (this.physicsBody) {
-      this.physicsBody.setTargetPosition(position);
+    // Don't move if dead or taking damage
+    if (this.isDead || this.isTakingDamage) {
+      console.log('[PLAYER] Cannot move - character is dead or taking damage');
+      return;
     }
     
-    // Check if position is walkable (uses map's isWalkable function)
-    let isWalkable = true;
+    if (!this.characterPhysics || !this.characterPhysics.rigidBody) {
+      console.error('[PLAYER] Cannot move - no physics body available');
+      return;
+    }
+    
+    // Validate move command data
+    if (!data || typeof data !== 'object') {
+      console.error('[PLAYER] Invalid move command data');
+      return;
+    }
+    
+    // Handle different data formats for movement
+    let clickCoords;
+    
+    // Handle direct x/z coordinates for testing or direct positioning
+    if (typeof data.x === 'number' && typeof data.z === 'number') {
+      // Create a target position from direct coordinates
+      const targetPosition = new THREE.Vector3(data.x, 0, data.z);
+      
+      console.log(`[PLAYER] Using direct position: (${targetPosition.x.toFixed(2)}, ${targetPosition.z.toFixed(2)})`);
+      
+      // Check if the target position is walkable
+      let isWalkable = true;
+      if (window.game && window.game.currentMap && typeof window.game.currentMap.isWalkable === 'function') {
+        isWalkable = window.game.currentMap.isWalkable(targetPosition);
+      }
+      
+      if (!isWalkable) {
+        console.log('[PLAYER] Target position is not walkable, finding alternative path');
+        
+        // Try to find a walkable path
+        const walkablePath = this._findWalkablePath(targetPosition);
+        
+        if (walkablePath) {
+          console.log('[PLAYER] Found walkable alternative:', walkablePath);
+          
+          // Create visual indicator for non-walkable
+          this._createNonWalkableIndicator(targetPosition);
+          
+          // Use the walkable point instead
+          targetPosition.copy(walkablePath);
+          
+          // Create movement indicator at the walkable point
+          this._createMovementIndicator(walkablePath);
+        } else {
+          console.log('[PLAYER] No walkable path found');
+          
+          // Create visual indicator for non-walkable
+          this._createNonWalkableIndicator(targetPosition);
+          
+          // Can't move here
+          return;
+        }
+      } else {
+        // Create visual indicator for movement
+        this._createMovementIndicator(targetPosition);
+      }
+      
+      // Set the proper Y height based on the terrain
+      if (window.game && window.game.currentMap && typeof window.game.currentMap.getHeightAt === 'function') {
+        const terrainHeight = window.game.currentMap.getHeightAt(targetPosition);
+        if (terrainHeight !== undefined && !isNaN(terrainHeight)) {
+          targetPosition.y = terrainHeight;
+          console.log(`[PLAYER] Set target height to match terrain: ${terrainHeight.toFixed(2)}`);
+        }
+      }
+      
+      // Update the character's target position using physics
+      console.log(`[PLAYER] Setting movement target to: (${targetPosition.x.toFixed(2)}, ${targetPosition.y.toFixed(2)}, ${targetPosition.z.toFixed(2)})`);
+      
+      // Set the target position in the character physics controller
+      this.characterPhysics.setTargetPosition(targetPosition);
+      
+      // Update animation
+      this.animation = 'run';
+      this._playAnimation('run');
+      
+      // Only emit server update if we're in multiplayer
+      if (window.socket && window.isMultiplayer) {
+        // Emit position update to server (for other players)
+        this._emitPositionUpdate();
+      }
+      
+      return;
+    }
+    
+    // Get click coordinates from standard mouse click
+    // Support both clickCoords (legacy) and position (new format from InputManager)
+    clickCoords = data.clickCoords || data.position;
+    if (!clickCoords) {
+      console.error('[PLAYER] No click coordinates provided in data:', data);
+      return;
+    }
+    
+    console.log('[PLAYER] Processing click at screen coordinates:', clickCoords.x, clickCoords.y);
+    
+    // Convert click coordinates to NDC (Normalized Device Coordinates)
+    // Use provided NDC if available, otherwise calculate
+    let ndcCoords;
+    if (data.ndc) {
+      ndcCoords = data.ndc;
+    } else {
+      ndcCoords = new THREE.Vector2(
+        (clickCoords.x / window.innerWidth) * 2 - 1,
+        -(clickCoords.y / window.innerHeight) * 2 + 1
+      );
+    }
+    
+    console.log(`[PLAYER] Processing click at NDC coordinates: (${ndcCoords.x.toFixed(3)}, ${ndcCoords.y.toFixed(3)})`);
+    
+    // Make sure we have a valid camera reference
+    if (!window.currentCamera) {
+      console.error('[PLAYER] Cannot raycasting - no camera available');
+      return;
+    }
+    
+    // Create a raycaster to convert screen position to world position
+    const raycaster = new THREE.Raycaster();
+    
+    // Set the raycaster from the camera using NDC coordinates
+    raycaster.setFromCamera(ndcCoords, window.currentCamera);
+    
+    // Define a "ground plane" to intersect with
+    // Use the current map or a temporary plane if no map is available
+    let intersectionTarget = [];
+    
     if (window.game && window.game.currentMap) {
-      isWalkable = window.game.currentMap.isWalkable(position);
+      // Array to hold all meshes that can be raycasted against
+      const mapMeshes = [];
+      
+      // Add map container if it exists
+      if (window.game.currentMap.mapContainer) {
+        mapMeshes.push(window.game.currentMap.mapContainer);
+      }
+      
+      // Add map floor if it exists
+      if (window.game.currentMap.mapFloor) {
+        mapMeshes.push(window.game.currentMap.mapFloor);
+      }
+      
+      // Add individual terrain meshes that exist in tournament map
+      const terrainMeshIds = ['stoneMesh', 'grassMesh', 'dirt2Mesh', 'dirtMesh', 'sandMesh'];
+      for (const id of terrainMeshIds) {
+        const mesh = window.renderer.getObject(id);
+        if (mesh) {
+          mapMeshes.push(mesh);
+        }
+      }
+      
+      // Add water plane for intersection if it exists
+      if (window.game.currentMap.waterMesh) {
+        mapMeshes.push(window.game.currentMap.waterMesh);
+      }
+      
+      intersectionTarget = mapMeshes;
+      
+      console.log(`[PLAYER] Raycasting against ${mapMeshes.length} map meshes`);
+    } else {
+      // No map available, create a temporary ground plane
+      const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      intersectionTarget = groundPlane;
+      
+      console.log('[PLAYER] No map available, using temporary ground plane');
+    }
+    
+    // Find intersection point
+    let targetPosition;
+    
+    if (Array.isArray(intersectionTarget)) {
+      // Using mesh objects
+      const intersects = raycaster.intersectObjects(intersectionTarget, true);
+      
+      if (intersects.length > 0) {
+        // Get the closest intersection point
+        targetPosition = intersects[0].point.clone();
+        console.log(`[PLAYER] Raycast hit at: (${targetPosition.x.toFixed(2)}, ${targetPosition.y.toFixed(2)}, ${targetPosition.z.toFixed(2)})`);
+      } else {
+        // FALLBACK: If no raycast hits, use a ground plane at y=0
+        console.warn('[PLAYER] No raycast hits on map, using fallback ground plane');
+        const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+        const intersect = new THREE.Vector3();
+        raycaster.ray.intersectPlane(groundPlane, intersect);
+        targetPosition = intersect.clone();
+        
+        // Make sure the target position is within the map bounds if possible
+        if (window.game && window.game.currentMap && window.game.currentMap.mapRadius) {
+          const horizontalDist = Math.sqrt(targetPosition.x * targetPosition.x + targetPosition.z * targetPosition.z);
+          if (horizontalDist > window.game.currentMap.mapRadius) {
+            // Scale back to map radius
+            const scaleFactor = window.game.currentMap.mapRadius / horizontalDist * 0.9; // 10% inside the boundary
+            targetPosition.x *= scaleFactor;
+            targetPosition.z *= scaleFactor;
+          }
+        }
+      }
+    } else {
+      // Using a plane
+      const intersect = new THREE.Vector3();
+      raycaster.ray.intersectPlane(intersectionTarget, intersect);
+      targetPosition = intersect.clone();
+    }
+    
+    // Check if the target position is walkable
+    let isWalkable = true;
+    if (window.game && window.game.currentMap && typeof window.game.currentMap.isWalkable === 'function') {
+      isWalkable = window.game.currentMap.isWalkable(targetPosition);
     }
     
     if (!isWalkable) {
-      console.log('[MOVEMENT] Target position is not walkable, finding alternative');
+      console.log('[PLAYER] Target position is not walkable, finding alternative path');
       
-      // If not walkable, try to find a walkable point nearby
-      if (window.game && window.game.currentMap && window.game.currentMap.adjustToWalkable) {
-        // Get current position for reference
-        const currentPos = this.position.clone();
+      // Try to find a walkable path
+      const walkablePath = this._findWalkablePath(targetPosition);
+      
+      if (walkablePath) {
+        console.log('[PLAYER] Found walkable alternative:', walkablePath);
         
-        // Try to find a walkable position near the clicked point
-        const adjustedPosition = window.game.currentMap.adjustToWalkable(position, currentPos);
+        // Create visual indicator for non-walkable
+        this._createNonWalkableIndicator(targetPosition);
         
-        if (adjustedPosition) {
-          console.log('[MOVEMENT] Found walkable alternative', adjustedPosition);
-          position.copy(adjustedPosition);
-          this.targetPosition = position.clone();
-          
-          // Update physics target if available
-          if (this.physicsBody) {
-            this.physicsBody.setTargetPosition(position);
-          }
-          
-          isWalkable = true;
-        } else {
-          console.log('[MOVEMENT] No walkable alternative found');
-          this._createNonWalkableIndicator(position);
-          return; // Exit if no walkable alternative
-        }
+        // Use the walkable point instead
+        targetPosition.copy(walkablePath);
+        
+        // Create movement indicator at the walkable point
+        this._createMovementIndicator(walkablePath);
       } else {
-        console.log('[MOVEMENT] Cannot adjust position - map functions not available');
-        this._createNonWalkableIndicator(position);
-        return; // Exit if cannot adjust
+        console.log('[PLAYER] No walkable path found');
+        
+        // Create visual indicator for non-walkable
+        this._createNonWalkableIndicator(targetPosition);
+        
+        // Can't move here
+        return;
       }
+    } else {
+      // Create visual indicator for movement
+      this._createMovementIndicator(targetPosition);
     }
     
-    // Create movement indicator at clicked position
-    this._createMovementIndicator(position);
+    // Update the character's target position
+    // PHYSICS: Now we use the CharacterPhysics controller to handle movement
+    console.log(`[PLAYER] Setting movement target to: (${targetPosition.x.toFixed(2)}, ${targetPosition.y.toFixed(2)}, ${targetPosition.z.toFixed(2)})`);
     
-    // Clear any existing path
-    this.pathfindingPath = [];
+    // Set the target position in the character physics controller
+    this.characterPhysics.setTargetPosition(targetPosition);
     
-    // Set mouse movement flag
-    this.isMouseMoving = true;
+    // Update animation
+    this.animation = 'run';
+    this._playAnimation('run');
     
-    // Emit movement event to server
-    webSocketManager.movePlayer({
-      id: this.id,
-      targetPosition: {
-        x: position.x,
-        y: position.y,
-        z: position.z
-      }
-    });
+    // Only emit server update if we're in multiplayer
+    if (window.socket && window.isMultiplayer) {
+      // Emit position update to server (for other players)
+      this._emitPositionUpdate();
+    }
   }
   
   /**
@@ -473,10 +713,13 @@ class Player extends Entity {
     
     geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
     
-    // Create red material
+    // Create bright red material with transparency
     const material = new THREE.LineBasicMaterial({ 
       color: 0xff0000,
-      linewidth: 3
+      linewidth: 3,
+      transparent: true,
+      opacity: 0.9,
+      depthTest: false // Ensure it's visible even if below terrain
     });
     
     // Create line segments
@@ -496,21 +739,24 @@ class Player extends Entity {
       id: `non-walkable-indicator-${Date.now()}`,
       object: indicator,
       temporary: true,
-      duration: 1.5
+      duration: 2.0 // Match the duration of the movement indicator
     });
     
-    // Animate indicator
+    // Animate indicator with a simple pulse
     const startTime = Date.now();
-    const duration = 1500; // 1.5 seconds
+    const duration = 2000; // 2 seconds
     
     const animateIndicator = () => {
       const elapsed = Date.now() - startTime;
       const progress = elapsed / duration;
       
-      if (progress < 1) {
-        // Fade out and scale up
-        indicator.material.opacity = 1 - progress;
-        indicator.scale.set(1 + progress, 1 + progress, 1 + progress);
+      if (progress < 1 && indicator.parent) {
+        // Simple pulse animation that expands and fades out
+        const scale = 1 + progress * 1.5; // Gradually expand to 2.5x size
+        indicator.scale.set(scale, scale, scale);
+        
+        // Fade out as it expands
+        indicator.material.opacity = 0.9 * (1 - progress);
         
         requestAnimationFrame(animateIndicator);
       }
@@ -521,7 +767,7 @@ class Player extends Entity {
   }
 
   /**
-   * Create a more visible indicator
+   * Create a movement indicator at the click position
    * @param {THREE.Vector3} position - Position to place the indicator
    * @private
    */
@@ -546,10 +792,10 @@ class Player extends Entity {
       }
     }
     
-    // Create a much more visible indicator
-    const geometry = new THREE.RingGeometry(0.5, 0.7, 32);
+    // Create a ring indicator with dark red color
+    const geometry = new THREE.RingGeometry(0.4, 0.6, 32); // Slightly smaller ring
     const material = new THREE.MeshBasicMaterial({
-      color: 0x00ffff, // Cyan for high visibility
+      color: 0x8B0000, // Dark red color
       transparent: true,
       opacity: 0.8,
       side: THREE.DoubleSide,
@@ -562,47 +808,35 @@ class Player extends Entity {
     indicator.position.set(position.x, indicatorHeight, position.z);
     indicator.rotation.x = -Math.PI / 2; // Lay flat on the ground
     
-    // Also add a vertical beam for better visibility
-    const beamGeometry = new THREE.CylinderGeometry(0.05, 0.05, 3, 8);
-    const beamMaterial = new THREE.MeshBasicMaterial({
-      color: 0x00ffff, // Cyan to match ring
-      transparent: true,
-      opacity: 0.4
-    });
-    
-    const beam = new THREE.Mesh(beamGeometry, beamMaterial);
-    beam.position.set(0, 1.5, 0); // Position above the ring
-    indicator.add(beam);
-    
     // Generate a unique ID for this indicator
     const indicatorId = `move-indicator-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     
     // Log the indicator creation for debugging
     console.log(`[INDICATOR] Created movement indicator at (${position.x.toFixed(2)}, ${indicatorHeight.toFixed(2)}, ${position.z.toFixed(2)})`);
     
-    // Add to scene with longer duration
+    // Add to scene with shorter duration
     eventBus.emit('renderer.addObject', {
       id: indicatorId,
       object: indicator,
       temporary: true,
-      duration: 3.0 // 3 seconds for better visibility
+      duration: 2.0 // 2 seconds is enough for a click indicator
     });
     
-    // Add pulsing animation effect
+    // Add simple pulsing animation effect
     const startTime = Date.now();
-    const duration = 3000; // 3 seconds, matching the duration above
+    const duration = 2000; // 2 seconds, matching the duration above
     
     const animateIndicator = () => {
       const elapsed = Date.now() - startTime;
       const progress = elapsed / duration;
       
       if (progress < 1 && indicator.parent) {
-        // Scale the indicator using sine wave for pulsing effect
-        const scale = 0.9 + Math.sin(progress * Math.PI * 6) * 0.3;
+        // Simple pulse animation that expands and fades out
+        const scale = 1 + progress * 1.5; // Gradually expand to 2.5x size
         indicator.scale.set(scale, scale, scale);
         
-        // Rotate the indicator for more visibility
-        indicator.rotation.z += 0.01;
+        // Fade out as it expands
+        indicator.material.opacity = 0.8 * (1 - progress);
         
         // Continue animation
         requestAnimationFrame(animateIndicator);
@@ -775,165 +1009,148 @@ class Player extends Entity {
   }
 
   /**
-   * Update player position based on movement direction
-   * @param {number} deltaTime - Time since last update in seconds
+   * Update player state
+   * @param {number} deltaTime - Time since last update
    */
   update(deltaTime) {
-    // Call base entity update (components)
-    super.update(deltaTime);
+    // Update mesh animation
+    if (this.mixer) {
+      this.mixer.update(deltaTime);
+    }
     
-    // Ensure a reasonable deltaTime (prevent extremely small values)
-    const safeDeltatime = Math.max(deltaTime, 0.016); // Force minimum 16ms (~60 FPS)
-    
-    // Update physics body if available
-    if (this.physicsBody) {
-      this.physicsBody.update(safeDeltatime);
-    } else {
-      // Fall back to the old height-based terrain adjustment if physics not available
-      this._updateHeightBasedOnTerrain();
+    // Update physics if available
+    if (this.characterPhysics) {
+      this.characterPhysics.update(deltaTime);
       
-      // Make sure mesh follows player position (crucial for visual rendering)
+      // Update internal position tracking to match the mesh
+      // This ensures all position-dependent code works correctly
       if (this.mesh) {
-        this.mesh.position.copy(this.position);
+        this.position.copy(this.mesh.position);
       }
     }
     
-    // Handle mouse-driven movement (click to move)
-    if (this.isMouseMoving && this.targetPosition) {
-      // Calculate distance to target
-      const distanceToTarget = this.position.distanceTo(this.targetPosition);
+    // Update health UI
+    this._updateHealthUI();
+    
+    // Update cooldown UI if it exists
+    if (this._updateCooldownUI) {
+      this._updateCooldownUI();
+    }
+    
+    // Regenerate mana if it exists
+    if (this._regenerateMana) {
+      this._regenerateMana(deltaTime);
+    }
+  }
+
+  /**
+   * Update animations based on player state
+   * @param {number} deltaTime - Time since last update
+   * @private
+   */
+  _updateAnimations(deltaTime) {
+    // If we have a mixer, update it with the delta time
+    if (this.mixer) {
+      this.mixer.update(deltaTime);
+    }
+    
+    // If we're moving, make sure the running animation is playing
+    if (this.isMoving) {
+      if (this.animation !== 'run') {
+        this.animation = 'run';
+        this._playAnimation('run');
+      }
+    } else {
+      // Otherwise, make sure we're idling
+      if (this.animation !== 'idle') {
+        this.animation = 'idle';
+        this._playAnimation('idle');
+      }
+    }
+  }
+
+  /**
+   * Play an animation on the character model
+   * @param {string} animationName - Name of the animation to play
+   * @private
+   */
+  _playAnimation(animationName) {
+    // Check if mesh and mixer are available
+    if (!this.mesh || !this.mixer) {
+      console.warn(`[PLAYER] Cannot play animation - mesh or mixer not available`);
       
-      // If very close to target, just snap to it
-      if (distanceToTarget < 0.1) {
-        this.position.copy(this.targetPosition);
-        if (this.mesh) {
-          this.mesh.position.copy(this.position);
+      // If mesh exists but mixer doesn't, try to initialize the mixer
+      if (this.mesh && !this.mixer) {
+        console.log('[PLAYER] Attempting to initialize mixer for animations');
+        
+        // Create a simple animation mixer
+        this.mixer = new THREE.AnimationMixer(this.mesh);
+        
+        // Create dummy animations if they don't exist
+        if (!this.animations || Object.keys(this.animations).length === 0) {
+          console.log('[PLAYER] Creating basic animations');
+          
+          const idleTrack = new THREE.AnimationClip('idle', 1, [
+            new THREE.KeyframeTrack(
+              '.rotation[y]',
+              [0, 0.5, 1],
+              [0, 0.05, 0]
+            )
+          ]);
+          
+          const runTrack = new THREE.AnimationClip('run', 0.5, [
+            new THREE.KeyframeTrack(
+              '.position[y]',
+              [0, 0.25, 0.5],
+              [this.mesh.position.y, this.mesh.position.y + 0.1, this.mesh.position.y]
+            )
+          ]);
+          
+          // Store animations
+          this.animations = {
+            'idle': this.mixer.clipAction(idleTrack),
+            'run': this.mixer.clipAction(runTrack)
+          };
+          
+          // Set loop modes
+          this.animations['idle'].setLoop(THREE.LoopRepeat);
+          this.animations['run'].setLoop(THREE.LoopRepeat);
         }
-        console.log(`[MOVEMENT] Reached target position`);
-        this.isMouseMoving = false;
       } else {
-        // Calculate direction to target
-        const direction = new THREE.Vector3()
-          .subVectors(this.targetPosition, this.position)
-          .normalize();
-        
-        // Move towards target at appropriate speed
-        const moveDistance = this.stats.speed * safeDeltatime * 40;
-        
-        // Calculate new position
-        const newPosition = new THREE.Vector3()
-          .copy(this.position)
-          .addScaledVector(direction, moveDistance);
-        
-        // Update position
-        this.position.copy(newPosition);
-        
-        // Update mesh position (if not using physics)
-        if (this.mesh && !this.physicsBody) {
-          this.mesh.position.copy(this.position);
-        }
-        
-        // Rotate character to face movement direction
-        if (this.mesh) {
-          const targetRotation = Math.atan2(direction.x, direction.z);
-          this.mesh.rotation.y = this._getAngleDifference(this.mesh.rotation.y, targetRotation) * 0.1 + this.mesh.rotation.y;
-        }
-        
-        // Emit position update to network
-        webSocketManager.updatePlayerPosition({
-          id: this.id,
-          position: {
-            x: this.position.x,
-            y: this.position.y,
-            z: this.position.z
-          },
-          rotation: this.mesh ? this.mesh.rotation.y : 0
-        });
+        // If we can't initialize the mixer, return early
+        return;
       }
     }
     
-    // Regenerate mana over time
-    this._regenerateMana(safeDeltatime);
-    
-    // Update attack cooldown
-    if (this.attackCooldown > 0) {
-      this.attackCooldown -= safeDeltatime;
-      if (this.attackCooldown <= 0) {
-        this.attackCooldown = 0;
-        this._updateCooldownUI();
-      }
-    }
-  }
-  
-  /**
-   * Helper to get the shortest angle difference
-   * @param {number} current - Current angle in radians
-   * @param {number} target - Target angle in radians
-   * @returns {number} - Angle difference
-   * @private
-   */
-  _getAngleDifference(current, target) {
-    let diff = target - current;
-    while (diff > Math.PI) diff -= 2 * Math.PI;
-    while (diff < -Math.PI) diff += 2 * Math.PI;
-    return diff;
-  }
-  
-  /**
-   * Regenerate mana based on class type
-   * @param {number} deltaTime - Time since last update in seconds
-   * @private
-   */
-  _regenerateMana(deltaTime) {
-    // Skip if already at max mana
-    if (this.mana >= this.maxMana) {
-      this.mana = this.maxMana; // Ensure mana doesn't exceed max
+    // Make sure animations object exists
+    if (!this.animations) {
+      console.warn('[PLAYER] Animations object not initialized');
+      this.animations = {};
       return;
     }
     
-    let regenAmount = 0;
-    const now = Date.now();
-    
-    // Different regeneration mechanics based on class
-    if (this.classType === 'CLERK') {
-      // Clerk regenerates mana faster when standing still
-      const baseRegen = this.manaRegenRate * deltaTime;
-      const standingBonus = !this.isMoving && !this.isMouseMoving ? 
-                            this.manaUsage.CLERK.regenBonus.standing : 
-                            this.manaUsage.CLERK.regenBonus.moving;
-      
-      regenAmount = baseRegen * standingBonus;
-    } else if (this.classType === 'RANGER') {
-      // Ranger regenerates mana when not attacking for a few seconds
-      const timeSinceLastAttack = (now - this.lastAttackTime) / 1000;
-      if (timeSinceLastAttack > 3) { // 3 seconds without attacking
-        regenAmount = this.manaRegenRate * deltaTime * this.manaUsage.RANGER.regenBonus.notAttacking;
-      } else {
-        regenAmount = this.manaRegenRate * deltaTime;
-      }
-    } else {
-      // Default regeneration for other classes (e.g., Warrior)
-      regenAmount = this.manaRegenRate * deltaTime;
+    // Find the animation by name
+    const animation = this.animations[animationName];
+    if (!animation) {
+      console.warn(`[PLAYER] Animation "${animationName}" not found`);
+      return;
     }
     
-    // Apply regeneration
-    this.mana = Math.min(this.maxMana, this.mana + regenAmount);
-    
-    // Log mana regeneration only when significant changes occur (>= 1 mana)
-    this._lastLoggedMana = this._lastLoggedMana || this.mana;
-    if (Math.abs(this.mana - this._lastLoggedMana) >= 1) {
-      console.log(`Regenerated ${regenAmount.toFixed(2)} mana, current: ${this.mana.toFixed(1)}/${this.maxMana}`);
-      this._lastLoggedMana = this.mana;
+    // Stop current animation if different
+    if (this.currentAnimation && this.currentAnimation !== animation) {
+      this.currentAnimation.stop();
     }
     
-    // Emit mana change event for UI updates - but only when significant changes occur
-    this._lastEmittedMana = this._lastEmittedMana || this.mana;
-    if (Math.abs(this.mana - this._lastEmittedMana) >= 0.5) {
-      this._emitManaChange();
-      this._lastEmittedMana = this.mana;
+    // Play the new animation
+    animation.play();
+    this.currentAnimation = animation;
+    
+    // Log animation change (with random chance to avoid spam)
+    if (Math.random() < 0.1) {
+      console.log(`[PLAYER] Playing animation: ${animationName}`);
     }
   }
-  
+
   /**
    * Emit mana change event
    * @private
@@ -954,7 +1171,7 @@ class Player extends Entity {
     const attackCooldownFill = document.getElementById('cooldown-fill');
     if (attackCooldownFill) {
       // Calculate percentage of cooldown remaining
-      const maxCooldown = this.primaryAttack.cooldown;
+      const maxCooldown = this.primaryAttack?.cooldown || 1;
       const percentRemaining = (this.attackCooldown / maxCooldown) * 100;
       
       // Update the width of the cooldown fill
@@ -1004,7 +1221,7 @@ class Player extends Entity {
         skillIndex: 0,
         skillName: 'Basic Attack',
         remainingTime: this.attackCooldown,
-        totalTime: this.primaryAttack.cooldown
+        totalTime: this.primaryAttack?.cooldown || 1
       },
       {
         skillIndex: 'core',
@@ -1020,7 +1237,62 @@ class Player extends Entity {
       }
     ]);
   }
-  
+
+  /**
+   * Regenerate mana based on class type
+   * @param {number} deltaTime - Time since last update in seconds
+   * @private
+   */
+  _regenerateMana(deltaTime) {
+    // Skip if already at max mana
+    if (this.mana >= this.maxMana) {
+      this.mana = this.maxMana; // Ensure mana doesn't exceed max
+      return;
+    }
+    
+    let regenAmount = 0;
+    const now = Date.now();
+    
+    // Different regeneration mechanics based on class
+    if (this.classType === 'CLERK') {
+      // Clerk regenerates mana faster when standing still
+      const baseRegen = this.manaRegenRate * deltaTime;
+      const standingBonus = !this.isMoving ? 
+                           this.manaUsage.CLERK.regenBonus.standing : 
+                           this.manaUsage.CLERK.regenBonus.moving;
+      
+      regenAmount = baseRegen * standingBonus;
+    } else if (this.classType === 'RANGER') {
+      // Ranger regenerates mana when not attacking for a few seconds
+      const timeSinceLastAttack = (now - this.lastAttackTime) / 1000;
+      if (timeSinceLastAttack > 3) { // 3 seconds without attacking
+        regenAmount = this.manaRegenRate * deltaTime * this.manaUsage.RANGER.regenBonus.notAttacking;
+      } else {
+        regenAmount = this.manaRegenRate * deltaTime;
+      }
+    } else {
+      // Default regeneration for other classes (e.g., Warrior)
+      regenAmount = this.manaRegenRate * deltaTime;
+    }
+    
+    // Apply regeneration
+    this.mana = Math.min(this.maxMana, this.mana + regenAmount);
+    
+    // Log mana regeneration only when significant changes occur (>= 1 mana)
+    this._lastLoggedMana = this._lastLoggedMana || this.mana;
+    if (Math.abs(this.mana - this._lastLoggedMana) >= 1) {
+      console.log(`Regenerated ${regenAmount.toFixed(2)} mana, current: ${this.mana.toFixed(1)}/${this.maxMana}`);
+      this._lastLoggedMana = this.mana;
+    }
+    
+    // Emit mana change event for UI updates - but only when significant changes occur
+    this._lastEmittedMana = this._lastEmittedMana || this.mana;
+    if (Math.abs(this.mana - this._lastEmittedMana) >= 0.5) {
+      this._emitManaChange();
+      this._lastEmittedMana = this.mana;
+    }
+  }
+
   /**
    * Handle mouse click for attack
    * @param {Object} data - Click event data
@@ -1729,13 +2001,31 @@ class Player extends Entity {
   destroy() {
     console.log(`[PLAYER] Destroying player ${this.id} (${this.classType})`);
     
-    // Dispose of physics body if it exists
-    if (this.physicsBody) {
-      this.physicsBody.dispose();
-      this.physicsBody = null;
+    // Remove physics controller if it exists
+    if (this.characterPhysics) {
+      this.characterPhysics.dispose();
+      this.characterPhysics = null;
     }
     
-    // Remove all event listeners
+    // Clear terrain check interval
+    if (this.terrainCheckInterval) {
+      clearInterval(this.terrainCheckInterval);
+      this.terrainCheckInterval = null;
+      console.log('[PLAYER] Cleared terrain check interval');
+    }
+    
+    // Clean up mesh
+    if (this.mesh) {
+      if (window.renderer) {
+        window.renderer.removeObject(`player-${this.id}`);
+      }
+      this.mesh = null;
+    }
+    
+    // Remove nameplates and health bars
+    this._removeNameplateAndHealthBar();
+    
+    // Remove event listeners
     eventBus.off(`input.moveForward.${this.id}`);
     eventBus.off(`input.moveBackward.${this.id}`);
     eventBus.off(`input.moveLeft.${this.id}`);
@@ -1802,61 +2092,46 @@ class Player extends Entity {
    * @private
    */
   _updateHealthUI() {
-    // Validate health values to prevent NaN errors
-    if (typeof this.health !== 'number' || isNaN(this.health)) {
-      console.warn('Invalid health value in _updateHealthUI, resetting to 0');
-      this.health = 0;
+    // Skip if we've updated very recently (prevent spam)
+    if (this._lastHealthUpdate && Date.now() - this._lastHealthUpdate < 500) {
+      return; // Only update every 500ms
     }
     
-    if (!this.stats || typeof this.stats.health !== 'number' || isNaN(this.stats.health) || this.stats.health <= 0) {
-      console.warn('Invalid max health value in _updateHealthUI, using default');
-      if (!this.stats) this.stats = {};
-      this.stats.health = 100; // Default max health
-    }
+    // Update timestamp
+    this._lastHealthUpdate = Date.now();
     
-    console.log(`UPDATING PLAYER UI: Health = ${this.health}/${this.stats.health}`);
-    
-    // Update health bar
+    // Make sure we have UI elements
     const healthFill = document.getElementById('health-fill');
-    const playerStats = document.getElementById('player-stats');
+    const statsText = document.getElementById('player-stats');
     
-    if (healthFill) {
-      // Calculate health percentage, ensuring it's between 0-100
-      const healthPercent = Math.max(0, Math.min(100, (this.health / this.stats.health) * 100));
-      
-      // Force immediate update
-      healthFill.style.transition = 'none';
-      healthFill.style.width = `${healthPercent}%`;
-      healthFill.offsetHeight; // Force reflow
-      
-      // Update color based on health percentage
-      if (healthPercent > 60) {
-        healthFill.style.backgroundColor = '#2ecc71'; // Green
-      } else if (healthPercent > 30) {
-        healthFill.style.backgroundColor = '#f39c12'; // Orange
-      } else {
-        healthFill.style.backgroundColor = '#e74c3c'; // Red
-      }
-      
-      console.log(`Health bar updated: ${healthPercent}% width, health: ${this.health}/${this.stats.health}`);
-      
-      // Re-enable transition
-      setTimeout(() => {
-        healthFill.style.transition = 'width 0.3s ease-out, background-color 0.3s ease-out';
-      }, 50);
+    if (!healthFill || !statsText) {
+      return;
     }
     
-    if (playerStats) {
-      playerStats.textContent = `Health: ${Math.round(this.health)}/${this.stats.health}`;
-      console.log(`Player stats text updated to: ${playerStats.textContent}`);
+    // Calculate health percentage for display
+    const maxHealth = this.stats ? this.stats.health : 100;
+    const currentHealth = this.health || 0;
+    const healthPercentage = Math.max(0, Math.min(100, (currentHealth / maxHealth * 100)));
+    
+    console.log('UPDATING PLAYER UI: Health =', currentHealth + '/' + maxHealth);
+    
+    // Update health fill bar width
+    healthFill.style.width = healthPercentage + '%';
+    
+    // Color-code health based on percentage
+    if (healthPercentage > 60) {
+      healthFill.style.backgroundColor = '#3de73d'; // Green
+    } else if (healthPercentage > 30) {
+      healthFill.style.backgroundColor = '#e7de3d'; // Yellow
+    } else {
+      healthFill.style.backgroundColor = '#e73d3d'; // Red
     }
     
-    // Update the health orb in the HUD
-    eventBus.emit('player.healthChanged', {
-      id: this.id,
-      health: this.health,
-      maxHealth: this.stats.health
-    });
+    // Update text display
+    statsText.textContent = `Health: ${currentHealth}/${maxHealth}`;
+    
+    console.log('Health bar updated: ' + healthPercentage + '% width, health: ' + currentHealth + '/' + maxHealth);
+    console.log('Player stats text updated to: ' + statsText.textContent);
   }
 
   /**
@@ -1890,106 +2165,444 @@ class Player extends Entity {
   }
 
   /**
-   * Update player height based on terrain
+   * Initialize physics for the player
+   * Uses CharacterPhysics to create a kinematic physics body for the player
+   * that handles movement, collision detection, and terrain alignment
    * @private
    */
-  _updateHeightBasedOnTerrain() {
-    // Only adjust height in tournament mode
-    if (window.game?.gameMode !== 'tournament') return;
+  _initializePhysics() {
+    if (!this.mesh) {
+      console.error('[PLAYER] Cannot initialize physics - mesh not created');
+      return;
+    }
     
-    const currentMap = window.game?.currentMap;
-    if (!currentMap || typeof currentMap.getHeightAt !== 'function') return;
-    
-    // Get terrain height at current position
-    const terrainHeight = currentMap.getHeightAt(this.position);
-    
-    // Set player slightly above terrain
-    if (terrainHeight !== undefined) {
-      // Only update if height change is significant
-      if (Math.abs(this.position.y - (terrainHeight + 0.1)) > 0.01) {
-        this.position.y = terrainHeight + 0.1;
-        
-        // Force update mesh position
-        if (this.mesh) {
-          this.mesh.position.copy(this.position);
-        }
-        
-        // Log position change occasionally
-        if (Math.random() < 0.01) {
-          console.log(`[PLAYER] Adjusted height to ${this.position.y.toFixed(2)} based on terrain at (${this.position.x.toFixed(2)}, ${this.position.z.toFixed(2)})`);
+    // Ensure initial position is above the ground
+    // If map exists, try to get the ground height at the player's position
+    if (window.game && window.game.currentMap && typeof window.game.currentMap.getHeightAt === 'function') {
+      const groundHeight = window.game.currentMap.getHeightAt(this.position);
+      if (groundHeight !== undefined && !isNaN(groundHeight)) {
+        // Ensure player is above the ground plus some margin
+        const minHeight = groundHeight + 2.0; // 2.0 units above ground
+        if (this.position.y < minHeight) {
+          console.log(`[PLAYER] Adjusting initial Y position from ${this.position.y.toFixed(2)} to ${minHeight.toFixed(2)} to stay above terrain`);
+          this.position.y = minHeight;
+          
+          // Also update mesh position
+          if (this.mesh) {
+            this.mesh.position.y = minHeight;
+          }
         }
       }
+    }
+    
+    // Create physics body for the player with adjusted position
+    this.characterPhysics = new CharacterPhysics({
+      characterMesh: this.mesh,
+      initialPosition: this.position.clone(),
+      characterHeight: this.characterHeight || 1.76,
+      characterRadius: this.characterRadius || 0.48
+    });
+    
+    // Store dimensions for convenience
+    this.characterHeight = this.characterHeight || 1.76;
+    this.characterRadius = this.characterRadius || 0.48;
+    
+    console.log(`[PLAYER PHYSICS] Character mesh dimensions: ${this.mesh.geometry.parameters.width.toFixed(2)} x ${this.mesh.geometry.parameters.height.toFixed(2)} x ${this.mesh.geometry.parameters.depth.toFixed(2)}`);
+    
+    // Listen for physics ready event
+    eventBus.once('characterPhysics.ready', () => {
+      console.log('[PLAYER] Physics body initialized with height', this.characterHeight, 'and radius', this.characterRadius);
+      console.log('[PLAYER] Initial position:', `(${this.position.x.toFixed(2)}, ${this.position.y.toFixed(2)}, ${this.position.z.toFixed(2)})`);
+      
+      // Expose physics debug toggle globally
+      window.togglePlayerPhysicsDebug = (visible) => {
+        if (this.characterPhysics) {
+          this.characterPhysics.toggleDebug(visible);
+        }
+      };
+      
+      // Enable physics debug by default in dev mode
+      if (process.env.NODE_ENV === 'development') {
+        window.togglePlayerPhysicsDebug(true);
+        console.log('[PLAYER] Physics debug visualization enabled automatically');
+      }
+      
+      console.log('[PLAYER] Physics debug toggle exposed as window.togglePlayerPhysicsDebug(true/false)');
+      
+      // Initialize fully after physics are ready
+      this._initializeAfterLoad();
+      
+      // Schedule periodic checks to ensure terrain meshes stay available
+      // This helps when navigating between scenes or after loading new maps
+      this.terrainCheckInterval = setInterval(() => {
+        this._ensureTerrainMeshesAvailable();
+      }, 5000); // Check every 5 seconds
+      
+      console.log('[PLAYER] Scheduled periodic terrain mesh availability checks');
+    });
+  }
+
+  /**
+   * Emit position update to network
+   * @private
+   */
+  _emitPositionUpdate() {
+    // Don't emit position updates if not initialized
+    if (!this.isInitialized) return;
+    
+    // Get current position and rotation
+    const position = this.mesh ? this.mesh.position.clone() : this.position.clone();
+    const rotation = this.mesh ? this.mesh.rotation.y : this.rotation.y;
+    
+    // Create position update data
+    const updateData = {
+      id: this.id,
+      position: {
+        x: position.x,
+        y: position.y,
+        z: position.z
+      },
+      rotation: rotation
+    };
+    
+    // Emit locally for client-side prediction
+    eventBus.emit('player.positionUpdated', updateData);
+    
+    // Send to server if network is available
+    if (window.webSocketManager) {
+      window.webSocketManager.updatePlayerPosition(updateData);
     }
   }
 
   /**
-   * Initialize physics body for the player
+   * Get height at a specific position from the terrain
+   * @param {THREE.Vector3} position - Position to check
+   * @returns {number|null} - Terrain height or null if not available
    * @private
    */
-  _initializePhysics() {
-    // Ensure mesh is created first
-    if (!this.mesh) {
-      console.warn('[PLAYER] Cannot initialize physics - mesh not yet created');
+  _getHeightAtPosition(position) {
+    // Try to get height from the current map
+    if (window.game && window.game.currentMap) {
+      if (typeof window.game.currentMap.getHeightAt === 'function') {
+        return window.game.currentMap.getHeightAt(position);
+      } else if (typeof window.game.currentMap.getHeightAtPosition === 'function') {
+        return window.game.currentMap.getHeightAtPosition(position);
+      }
+    }
+    
+    // Fallback: return current height
+    console.warn('[PLAYER] No map terrain height function available, using current height');
+    return this.mesh ? this.mesh.position.y : this.position.y;
+  }
+
+  /**
+   * Ensure all terrain meshes are ready for raycasting
+   * This fixes issues with movement by making sure all map meshes are properly referenced
+   */
+  _ensureTerrainMeshesAvailable() {
+    if (!window.game || !window.game.currentMap) {
+      console.warn('[PLAYER] Cannot ensure terrain meshes - no map available');
       return;
     }
     
-    // Get character dimensions from the mesh
-    const bbox = new THREE.Box3().setFromObject(this.mesh);
-    const size = new THREE.Vector3();
-    bbox.getSize(size);
-    
-    // Log the actual mesh dimensions for debugging
-    console.log(`[PLAYER PHYSICS] Character mesh dimensions: ${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)}`);
-    
-    // Safety check for valid dimensions
-    if (size.y < 0.5 || size.x < 0.1 || size.z < 0.1) {
-      console.warn(`[PLAYER] Detected unusually small character dimensions: ${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)}, using defaults`);
-      size.set(0.8, 1.6, 0.8); // Default dimensions that won't cause issues
+    // Create a reference to mapContainer if needed
+    if (!window.game.currentMap.mapContainer && window.renderer) {
+      const mapContainer = window.renderer.getObject('mapContainer');
+      if (mapContainer) {
+        console.log('[PLAYER] Setting mapContainer reference on currentMap');
+        window.game.currentMap.mapContainer = mapContainer;
+      } else {
+        console.warn('[PLAYER] mapContainer not found in renderer');
+      }
     }
     
-    // Make the character physics capsule a bit larger than the mesh to prevent clipping
-    // This is especially important for character meshes that have parts that extend outside their center
-    const characterHeight = size.y * 1.1; // 10% taller
+    // Create a reference to mapFloor if needed
+    if (!window.game.currentMap.mapFloor && window.renderer) {
+      const mapFloor = window.renderer.getObject('mapFloor');
+      if (mapFloor) {
+        console.log('[PLAYER] Setting mapFloor reference on currentMap');
+        window.game.currentMap.mapFloor = mapFloor;
+      } else {
+        console.warn('[PLAYER] mapFloor not found in renderer');
+      }
+    }
     
-    // Use a reasonable radius based on character width, but not too small
-    // For a good envelope, make it larger than the mesh width
-    const characterRadius = Math.max(0.35, Math.max(size.x, size.z) / 2) * 1.2; // 20% wider
+    // Ensure map physics is initialized if available
+    if (window.game.currentMap && typeof window.game.currentMap.createPhysicsTerrain === 'function' && 
+        (!window.game.currentMap.physicsInitialized)) {
+      console.log('[PLAYER] Initializing map physics terrain');
+      window.game.currentMap.createPhysicsTerrain();
+      window.game.currentMap.physicsInitialized = true;
+    }
     
-    // Create physics body with explicit parameters for better debugging
-    this.physicsBody = new CharacterPhysics({
-      characterMesh: this.mesh,
-      initialPosition: this.position.clone(), // Clone to avoid reference issues
-      characterHeight: characterHeight,
-      characterRadius: characterRadius
+    // Check if character physics knows about the map
+    if (this.characterPhysics && this.characterPhysics.rigidBody) {
+      console.log('[PLAYER] Character physics body is available');
+      
+      // Test ground detection by casting a ray
+      if (window.RAPIER && window.physicsWorld && this.characterPhysics.ray) {
+        const currentPos = this.characterPhysics.rigidBody.translation();
+        
+        // Update ray position to current character position
+        this.characterPhysics.ray.origin.x = currentPos.x;
+        this.characterPhysics.ray.origin.y = currentPos.y + 0.1; // Slightly above character
+        this.characterPhysics.ray.origin.z = currentPos.z;
+        
+        // Cast ray downward
+        const hit = window.physicsWorld.castRay(this.characterPhysics.ray, 50.0, true);
+        
+        // Use optional chaining and nullish coalescing to avoid TypeErrors
+        const hitDistance = hit?.toi ? hit.toi.toFixed(2) : 'unknown';
+        console.log(`[PLAYER] Ray test result: ${hit ? 'HIT at distance ' + hitDistance : 'NO HIT'}`);
+        
+        // If no hit, try to get map height from getHeightAt
+        if (!hit && window.game.currentMap.getHeightAt) {
+          const mapHeight = window.game.currentMap.getHeightAt(new THREE.Vector3(currentPos.x, 0, currentPos.z));
+          const heightStr = mapHeight !== undefined && !isNaN(mapHeight) ? mapHeight.toFixed(2) : 'undefined';
+          console.log(`[PLAYER] Map height at current position: ${heightStr}`);
+          
+          // If height is valid and character is below it, reset position
+          if (mapHeight !== undefined && !isNaN(mapHeight) && currentPos.y < mapHeight) {
+            console.log(`[PLAYER] Character is below terrain, resetting position to terrain height + offset`);
+            const safeY = mapHeight + this.characterPhysics.characterRadius + 0.5;
+            
+            // Update physics body position
+            this.characterPhysics.rigidBody.setNextKinematicTranslation({
+              x: currentPos.x,
+              y: safeY,
+              z: currentPos.z
+            });
+            
+            // Also update character mesh
+            if (this.mesh) {
+              const meshY = safeY - (this.characterPhysics.characterHeight * 0.3); // Changed from 0.4 to 0.3
+              this.mesh.position.set(currentPos.x, meshY, currentPos.z);
+              this.position.copy(this.mesh.position);
+            }
+          }
+        }
+      }
+    }
+    
+    // Log status
+    console.log('[PLAYER] Terrain mesh check completed');
+  }
+
+  /**
+   * Initialize player after all resources are loaded
+   * @private
+   */
+  _initializeAfterLoad() {
+    console.log('[PLAYER] Initializing player after mesh load');
+    
+    // No need for _setupInputHandlers, input is handled in _setupEventListeners
+    
+    // Initialize UI if not already done (ensure proper UI updates)
+    if (window.game && window.game.updateHealthUI) {
+      const maxHealth = this.stats?.health || 100;
+      window.game.updateHealthUI(this.health, maxHealth);
+    }
+    
+    // Make sure health UI is updated
+    this._updateHealthUI();
+    
+    // Set up physics debugger if running in development mode
+    this._setupPhysicsDebugger();
+    
+    // Ensure terrain meshes are available for movement
+    this._ensureTerrainMeshesAvailable();
+    
+    // Emit event that player is fully initialized
+    eventBus.emit('player.ready', { player: this });
+    
+    // Set up interval to check terrain meshes periodically - IMPORTANT for ground detection
+    this.terrainCheckInterval = setInterval(() => {
+      this._ensureTerrainMeshesAvailable();
+    }, 5000); // Check every 5 seconds
+    
+    // Set initial animation
+    this._playAnimation('idle');
+  }
+  
+  /**
+   * Set up physics debugger
+   * @private
+   */
+  _setupPhysicsDebugger() {
+    // Only proceed if running in development mode
+    if (process.env.NODE_ENV === 'development' && this.characterPhysics) {
+      // Show physics debug visualization
+      this.characterPhysics.toggleDebug(true);
+      
+      // Add keyboard shortcut for toggling physics debug (F2)
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'F2') {
+          this.characterPhysics.toggleDebug(!this.characterPhysics.debugVisible);
+          console.log(`[PLAYER] Physics debug ${this.characterPhysics.debugVisible ? 'enabled' : 'disabled'}`);
+        }
+      });
+      
+      console.log('[PLAYER] Physics debugger enabled (press F2 to toggle)');
+    }
+  }
+
+  /**
+   * Remove the player's nameplate and health bar elements
+   * @private
+   */
+  _removeNameplateAndHealthBar() {
+    // For the main player, there typically aren't individually attached nameplate elements
+    // However, we should still check for any THREE.js objects attached to the mesh
+    if (this.mesh) {
+      // Check for health bar attached to mesh (similar to OtherPlayer implementation)
+      const healthBar = this.mesh.getObjectByName(`healthbar-${this.id}`);
+      if (healthBar) {
+        this.mesh.remove(healthBar);
+        console.log(`[PLAYER] Removed mesh-attached health bar for player ${this.id}`);
+      }
+      
+      // Check for nameplate
+      const nameplate = this.mesh.getObjectByName(`nameplate-${this.id}`);
+      if (nameplate) {
+        this.mesh.remove(nameplate);
+        console.log(`[PLAYER] Removed mesh-attached nameplate for player ${this.id}`);
+      }
+    }
+    
+    // Clean up any DOM-based UI elements specific to this player
+    // The main player UI elements are generally global, but we'll check for
+    // any player-specific elements that might have been created
+    
+    // Player-specific DOM elements (if they were created with IDs based on player ID)
+    const elements = [
+      `player-ui-${this.id}`,
+      `health-bar-${this.id}`,
+      `mana-bar-${this.id}`,
+      `nameplate-${this.id}`,
+      `skill-ui-${this.id}`
+    ];
+    
+    elements.forEach(id => {
+      const element = document.getElementById(id);
+      if (element && element.parentNode) {
+        element.parentNode.removeChild(element);
+        console.log(`[PLAYER] Removed DOM element: ${id}`);
+      }
     });
     
-    console.log(`[PLAYER] Physics body initialized with height ${characterHeight.toFixed(2)} and radius ${characterRadius.toFixed(2)}`);
-    console.log(`[PLAYER] Initial position: (${this.position.x.toFixed(2)}, ${this.position.y.toFixed(2)}, ${this.position.z.toFixed(2)})`);
-    
-    // Expose physics debug toggle globally with more detailed info
-    window.togglePlayerPhysicsDebug = (visible) => {
-      if (this.physicsBody) {
-        this.physicsBody.toggleDebug(visible);
-        console.log(`[PLAYER] Physics debug visualization ${visible ? 'enabled' : 'disabled'}`);
-        
-        // Log position for debugging
-        if (visible && this.physicsBody.debugMesh) {
-          const pos = this.physicsBody.debugMesh.position;
-          console.log(`[PLAYER] Physics debug position: (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
-        }
-        
-        return true;
+    // Reset any global UI elements (optional, since they'll be updated by a new player)
+    // This is mainly for visual feedback during player transitions
+    if (this.isLocalPlayer) {
+      const healthFill = document.getElementById('health-fill');
+      const playerStats = document.getElementById('player-stats');
+      
+      if (healthFill) {
+        healthFill.style.width = '0%';
       }
-      console.warn('[PLAYER] Cannot toggle physics debug - physics body not initialized');
-      return false;
-    };
-    
-    // Enable debug visualization by default for testing
-    if (this.physicsBody) {
-      this.physicsBody.toggleDebug(true);
+      
+      if (playerStats) {
+        playerStats.textContent = 'Health: 0/0';
+      }
     }
     
-    console.log('[PLAYER] Physics debug toggle exposed as window.togglePlayerPhysicsDebug(true/false)');
+    console.log(`[PLAYER] Completed UI cleanup for player ${this.id}`);
+  }
+
+  /**
+   * Update the player's health bar
+   * @private
+   */
+  _updateHealthBar() {
+    // Skip if player is dead
+    if (this.isDead) return;
+    
+    // Use updateHealthUI instead if it's the local player
+    if (this._updateHealthUI) {
+      this._updateHealthUI();
+      return;
+    }
+    
+    // For non-local players or if _updateHealthUI isn't available,
+    // create/update an in-game health bar above the character
+    
+    // Calculate health percentage
+    const maxHealth = this.stats?.health || 100;
+    const currentHealth = this.health || 0;
+    const healthPercent = Math.max(0, Math.min(1, currentHealth / maxHealth));
+    
+    // Log health status occasionally for debugging
+    if (Math.random() < 0.01) {
+      console.log(`[PLAYER] Health: ${currentHealth}/${maxHealth} (${(healthPercent * 100).toFixed(0)}%)`);
+    }
+    
+    // If mesh isn't available, we can't update a 3D health bar
+    if (!this.mesh) return;
+    
+    // Create health bar if it doesn't exist
+    if (!this.healthBar) {
+      const barWidth = 1.5;
+      const barHeight = 0.1;
+      
+      // Create container
+      this.healthBar = new THREE.Group();
+      this.healthBar.name = `healthbar-${this.id}`;
+      
+      // Position above character
+      this.healthBar.position.y = this.characterHeight ? this.characterHeight + 0.5 : 2.3;
+      
+      // Create background bar
+      const bgGeometry = new THREE.PlaneGeometry(barWidth, barHeight);
+      const bgMaterial = new THREE.MeshBasicMaterial({
+        color: 0x444444,
+        transparent: true,
+        opacity: 0.7,
+        depthTest: false
+      });
+      this.healthBarBg = new THREE.Mesh(bgGeometry, bgMaterial);
+      
+      // Create health fill
+      const fillGeometry = new THREE.PlaneGeometry(barWidth, barHeight);
+      const fillMaterial = new THREE.MeshBasicMaterial({
+        color: 0x00ff00,
+        transparent: true,
+        opacity: 0.9,
+        depthTest: false
+      });
+      this.healthBarFill = new THREE.Mesh(fillGeometry, fillMaterial);
+      this.healthBarFill.position.z = 0.01; // Slightly in front of background
+      
+      // Add to container
+      this.healthBar.add(this.healthBarBg);
+      this.healthBar.add(this.healthBarFill);
+      
+      // Add to mesh
+      this.mesh.add(this.healthBar);
+    }
+    
+    // Update health bar fill width based on health percentage
+    if (this.healthBarFill) {
+      const barWidth = 1.5;
+      this.healthBarFill.scale.x = healthPercent;
+      this.healthBarFill.position.x = (barWidth * (healthPercent - 1)) / 2;
+      
+      // Update color based on health percentage
+      const material = this.healthBarFill.material;
+      if (healthPercent > 0.6) {
+        // Green for high health
+        material.color.setRGB(0, 1, 0);
+      } else if (healthPercent > 0.3) {
+        // Yellow for medium health
+        material.color.setRGB(1, 1, 0);
+      } else {
+        // Red for low health
+        material.color.setRGB(1, 0, 0);
+      }
+    }
+    
+    // Make health bar face camera
+    if (this.healthBar && window.camera) {
+      this.healthBar.lookAt(window.camera.position);
+    }
   }
 }
 

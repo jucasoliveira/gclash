@@ -175,6 +175,9 @@ class Game {
       // Store reference locally
       this.physicsWorld = world;
       
+      // Set up physics stepping in the game loop
+      this._setupPhysicsLoop();
+      
       // Expose a helper method to toggle all physics debug visualizations
       window.toggleAllPhysicsDebug = (visible = true) => {
         console.log(`[GAME] Setting all physics debug visualizations to ${visible ? 'visible' : 'hidden'}`);
@@ -261,9 +264,46 @@ class Game {
       
       console.log('[GAME] Physics debug helper exposed as window.toggleAllPhysicsDebug(true/false)');
       console.log('[GAME] Rapier physics engine initialized successfully');
+      
+      // Emit event to notify other components that physics is initialized
+      eventBus.emit('physics.initialized');
     } catch (error) {
       console.error('[GAME] Error initializing Rapier physics engine:', error);
     }
+  }
+
+  /**
+   * Set up the physics world to update in the render loop
+   * @private
+   */
+  _setupPhysicsLoop() {
+    if (!this.physicsWorld) {
+      console.error('[GAME] Cannot set up physics loop - physics world not initialized');
+      return;
+    }
+    
+    // Create a physics update method
+    const updatePhysics = (data) => {
+      if (!this.physicsWorld) return;
+      
+      const { deltaTime } = data;
+      // Use fixed timestep for physics (1/60 seconds)
+      // For very small or large deltaTime, use a reasonable default
+      const fixedTimestep = Math.min(Math.max(deltaTime, 1/120), 1/30);
+      
+      // Step the physics world forward
+      this.physicsWorld.step();
+      
+      // Log physics steps at a low frequency to avoid console spam
+      if (Math.random() < 0.01) { // Log roughly once every 100 frames
+        console.log(`[GAME] Physics world stepped forward (deltaTime: ${fixedTimestep.toFixed(4)})`);
+      }
+    };
+    
+    // Subscribe to the render loop's update event
+    eventBus.on('renderer.beforeRender', updatePhysics);
+    
+    console.log('[GAME] Physics update loop initialized');
   }
 
   /**

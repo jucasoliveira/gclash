@@ -190,21 +190,23 @@ class InputManager {
     const ndcX = (event.clientX / window.innerWidth) * 2 - 1;
     const ndcY = -(event.clientY / window.innerHeight) * 2 + 1;
     
-    // Emit both move/interact and attack events - the handler will determine which to use
-    // based on whether there's a target under the cursor
-    eventBus.emit('input.click', {
+    // Create a standardized click data object
+    const clickData = {
       position: { x: event.clientX, y: event.clientY },
+      clickCoords: { x: event.clientX, y: event.clientY }, // Include both formats for compatibility
       ndc: { x: ndcX, y: ndcY },
       button: 'left',
-      event
-    });
+      timestamp: Date.now()
+    };
+    
+    console.log('[INPUT] Processing click at:', clickData.position.x, clickData.position.y);
+    
+    // Emit both move/interact and attack events - the handler will determine which to use
+    // based on whether there's a target under the cursor
+    eventBus.emit('input.click', clickData);
     
     // Also emit a move event for left click
-    eventBus.emit('input.move', {
-      position: { x: event.clientX, y: event.clientY },
-      ndc: { x: ndcX, y: ndcY },
-      event
-    });
+    eventBus.emit('input.move', clickData);
   }
   
   /**

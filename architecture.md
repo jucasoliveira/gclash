@@ -132,6 +132,18 @@ class Game {
 - Implements combat mechanics and character abilities
 - Processes input events for player movement and actions
 
+#### CharacterPhysics.js
+
+- Manages the kinematic physics body for a character
+- Creates and updates a Rapier capsule collider for player physics
+- Handles character movement, gravity and ground collision
+- Ensures proper synchronization between physics and visual representation
+- Manages character mesh positioning relative to the terrain
+- Implements terrain height detection and response
+- Provides debugging visualization for physics bodies
+- Handles character movement target and path calculation
+- Simulates gravity and enforces constraints to prevent falling through terrain
+
 #### OtherPlayer.js
 
 - Extends Entity for networked players

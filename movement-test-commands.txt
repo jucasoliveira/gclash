@@ -1,3 +1,0 @@
-// Add these to your browser console if movement isn't working:
-// 1. Reset camera position:
-window.updateCameraPosition(window.game.player.position);

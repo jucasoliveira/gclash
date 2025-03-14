@@ -154,6 +154,10 @@ Guild Clash uses a component-based architecture for better maintainability and e
 - See `docs/character-system.md` for character creation and management
 - See `docs/tournament-system.md` for tournament implementation details
 - See `docs/tournament-battle-royale-integration.md` for integration between tournaments and battle royale
+- See `docs/movement-physics-debugging.md` for debugging character movement and physics
+- See `docs/character_physics_fix.md` for details on character positioning fixes
+- See `docs/PHYSICS.md` for comprehensive physics system documentation
+- See `docs/game-physics-rules.md` for Rapier physics rules and implementation
 
 ## Current Status
 

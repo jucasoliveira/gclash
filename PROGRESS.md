@@ -1149,7 +1149,7 @@ Players were experiencing several issues with the walkable tile system:
 
 We've successfully implemented a physics representation that accurately matches the visual terrain in the game. The approach uses individual cylinder colliders for each hexagonal tile, which provides a much more precise collision system than the previous heightfield-based solution.
 
-### Key Improvements:
+### Key Improvements
 
 1. **Individual Hex Colliders:**
 
@@ -1200,3 +1200,157 @@ The implementation creates a single static rigid body that holds all the collide
 - Monitor performance with large numbers of players
 - Potentially optimize further by using compound shapes for adjacent tiles of the same height
 - Add physics representations for obstacles (trees, stones)
+
+# Technical Documentation: Character Physics Ground Detection System
+
+## Overview
+
+We've successfully implemented a robust ground detection and physics system for the player character that prevents falling through the terrain. The system uses a multi-layered approach to ensure the character always stays above ground, even when traditional raycasting might fail.
+
+## Key Improvements
+
+### 1. Physics Body-to-Mesh Alignment
+
+- **Consistent Offset Multiplier**: Changed all character height offset multipliers from 0.4 to 0.3 throughout the code
+- **Debug Visualization**: Adjusted capsule visualization to better match the actual collision body
+- **Character-Physics Sync**: Improved synchronization between visual mesh and physics body positions
+
+### 2. Enhanced Ground Detection
+
+- **Ray Origin Height**: Increased from 0.2 to 0.4 units above current position
+- **Detection Range**: Expanded from 2.5× to 3.0× character height for wider ground detection
+- **Type Checking**: Added proper handling for hit.toi to avoid "unknown" distance issues
+- **Detailed Debug Logging**: Added comprehensive hit result information including position, normal, and collider details
+
+### 3. Map Height Prioritization
+
+- **Primary Detection Method**: Now checking map height data FIRST, before ray casting
+- **Fallback System**: Implemented multiple safety checks across different methods
+- **Safe Position Calculation**: Improved formula to correctly position character above terrain
+- **Condition-Based Application**: Only applies when character is falling or within reasonable distance
+
+### 4. Improved Physics Initialization
+
+- **Map-Aware Initialization**: Now checks terrain height at spawn location
+- **Map Collision Detection**: Added \_initMapCollision() method to initialize map physics
+- **Continuous Collision Detection**: Enabled CONTACT_FORCE_EVENTS for more reliable collision detection
+- **Initial Ray Casting**: Performs ground detection immediately after initialization
+
+### 5. Gentler Gravity System
+
+- **Reduced Gravity**: From -9.81 to -5.0 for more controlled falling
+- **Maximum Fall Speed**: Added limit of -10.0 units/second
+- **Smooth Transitions**: Improved lerping between gravity states
+- **Safety Measures**: Added direct map height checks during gravity application
+
+## The Three-Layer Safety System
+
+Our solution implements a hierarchical approach to ground detection:
+
+1. **Map Height Data** (Primary Layer)
+
+   - Most reliable method
+   - Direct access to terrain height information
+   - Runs first in the physics update cycle
+   - Prevents falling regardless of ray casting results
+
+2. **Ray Casting** (Secondary Layer)
+
+   - Traditional physics-based ground detection
+   - Provides additional information (normal vectors, etc.)
+   - Enhanced with proper type checking and error handling
+   - Runs if map height method doesn't apply
+
+3. **Safety Checks** (Tertiary Layer)
+   - Minimum Y position checks (currently -3 units)
+   - Direct height checks in \_applyGravity()
+   - Safe position fallbacks using spawn points
+   - Emergency position resets when needed
+
+## Code Structure
+
+The ground detection system is primarily implemented across these methods:
+
+1. **update()** - The main entry point that:
+
+   - Implements first-level map height safety check
+   - Calls ground detection and movement methods
+   - Synchronizes mesh and physics positions
+
+2. **applyGravityAndGroundCollision()** - The core detection method that:
+
+   - Checks map height data first
+   - Performs ray casting if needed
+   - Applies appropriate position adjustments
+
+3. **\_applyGravity()** - The fallback method that:
+
+   - Applies controlled gravity with smoothing
+   - Implements additional map height checks
+   - Prevents falling below terrain
+
+4. **\_initPhysics()** and **\_initMapCollision()** - Initialization methods that:
+   - Set up the physics body correctly
+   - Position character at proper height
+   - Initialize collision detection with terrain
+
+## Debug Features
+
+The system includes comprehensive debugging capabilities:
+
+- **Visual Debug Capsule**: Red wireframe showing the physics collider
+- **Ray Cast Logging**: Detailed information about ground detection attempts
+- **Position Logging**: Regular updates of physics and mesh positions
+- **Terrain Data**: Map height detection and collider information
+- **Safety Triggers**: Logging when safety mechanisms activate
+
+## Technical Details
+
+- **Character Height Offset**: 0.3 × character height (reduced from 0.4)
+- **Ray Origin Height**: 0.4 units above physics body position
+- **Ground Threshold**: character radius + 0.3 units buffer
+- **Maximum Fall Speed**: -10.0 units/second
+- **Gravity Force**: -5.0 (reduced from -9.81)
+- **Minimum Y Position**: -3.0 (trigger for emergency reset)
+- **Safe Spawn Height**: 2.0 units above detected terrain
+
+## Success Criteria
+
+The system successfully:
+
+1. Keeps the character above terrain at all times
+2. Smoothly follows terrain contours during movement
+3. Properly detects and responds to height changes
+4. Recovers gracefully from potential falling issues
+5. Maintains visual alignment between mesh and physics body
+
+These improvements ensure players will no longer experience frustrating "falling through the ground" issues, creating a more polished gameplay experience.
+
+### Step 13: Character Physics and Mesh Positioning Fix
+
+- Fixed critical character mesh positioning issue:
+  - Identified misalignment between character mesh and physics body
+  - Resolved issue where player mesh (green cube) was sinking into the ground
+  - Ensured proper synchronization between physics body and visual representation
+- Implemented key technical improvements:
+  - Adjusted mesh positioning to account for pivot point at mesh center
+  - Added proper height offset calculation based on mesh dimensions
+  - Updated both initial positioning and runtime position updates
+  - Enhanced synchronization between physics body and visual mesh
+  - Added detailed logging for physics debugging
+- Technical details of the solution:
+  - Changed initial mesh position from `mapHeight` to `mapHeight + (characterMeshHeight / 2)`
+  - Updated mesh Y position calculation in the update loop to include height offset
+  - Restored physics body synchronization to maintain proper Y height relative to terrain
+  - Enhanced error checking and position validation
+  - Improved debug visualization accuracy
+- Improved development workflow:
+  - Added clearer debug logging for ground height and mesh offsets
+  - Enhanced physics debug visualization to accurately represent collision body
+  - Included timestamp-based conditional logging to reduce console spam
+- Benefits of the fix:
+  - Character now appears properly positioned on the terrain
+  - Visual and physics representations remain in sync during movement
+  - More accurate collision detection with the environment
+  - Improved overall visual quality and player experience
+  - Proper foundation for future animation and character model improvements
