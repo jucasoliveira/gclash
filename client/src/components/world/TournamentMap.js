@@ -24,7 +24,7 @@ class TournamentMap {
     this.wallThickness = 0.5;
     
     // Height constants for terrain types
-    this.MAX_HEIGHT = 2.5; // Reduced height for flatter terrain
+    this.MAX_HEIGHT = 2.8; // Reduced height for flatter terrain
     this.STONE_HEIGHT = this.MAX_HEIGHT * 0.8;
     this.DIRT_HEIGHT = this.MAX_HEIGHT * 0.7;
     this.GRASS_HEIGHT = this.MAX_HEIGHT * 0.5;
@@ -578,14 +578,14 @@ class TournamentMap {
       
       // Create a cylinder collider for this hex tile
       // Use radius of 1 to match the hex tiles (same as in hexGeometry)
-      // Height should match the tile's height
+      // Height should match the tile's height exactly
       const hexCollider = RAPIER.ColliderDesc.cylinder(tileInfo.height / 2, 1.0);
       
       // Position the collider at the tile's position
-      // Collider's y position should be at half height (center of cylinder)
+      // In tileInfo.position: x is the x-coordinate, y is the height, z is the z-coordinate
       hexCollider.setTranslation(
         position.x,
-        tileInfo.height / 2,
+        position.y / 2, // position.y is already the height, divide by 2 for center position
         position.z
       );
       
@@ -593,7 +593,7 @@ class TournamentMap {
       const colliderHandle = world.createCollider(hexCollider, groundBody.handle);
       hexColliders.push({
         handle: colliderHandle,
-        position: position,
+        position: new THREE.Vector3(position.x, position.y / 2, position.z), // Store accurate position with half-height
         height: tileInfo.height,
         type: tileInfo.type
       });
@@ -667,18 +667,14 @@ class TournamentMap {
         color: color,
         wireframe: true,
         transparent: true,
-        opacity: 0.6
+        opacity: 0.25,
       });
       
       // Create the mesh
       const hexMesh = new THREE.Mesh(hexGeometry, material);
       
-      // Position at the collider's position, with slight Y offset for visibility
-      hexMesh.position.set(
-        collider.position.x,
-        collider.position.y + 0.1, // 0.1 above actual terrain
-        collider.position.z
-      );
+      // Position exactly at the collider's position - this ensures the visual and physical match
+      hexMesh.position.copy(collider.position);
       
       // Add to the group
       hexGroup.add(hexMesh);
@@ -701,7 +697,8 @@ class TournamentMap {
     const boundaryMaterial = new THREE.MeshBasicMaterial({
       color: 0xff0000,
       wireframe: true,
-      transparent: false
+      transparent: true,
+      opacity: 0.3,
     });
     
     const boundaryMesh = new THREE.Mesh(boundaryGeometry, boundaryMaterial);
@@ -746,7 +743,7 @@ class TournamentMap {
       color: 0x00ff00,  // Bright green
       wireframe: true,
       transparent: true,
-      opacity: 0.7,
+      opacity: 0.3,
       side: THREE.DoubleSide
     });
     

@@ -222,7 +222,7 @@ class CharacterPhysics {
       color: 0xff0000, // Bright red
       wireframe: true, // Wireframe for clear visualization
       transparent: true,
-      opacity: 0.8, // More visible opacity
+      opacity: 0, // Reduced opacity for less visual interference
       depthTest: false, // Ensure it's visible even through other objects
       side: THREE.DoubleSide // Visible from both sides
     });

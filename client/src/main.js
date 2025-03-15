@@ -1,6 +1,10 @@
 // Import polyfills first
 import './webrtc-polyfills.js';
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+
+// Make GLTFLoader available globally
+THREE.GLTFLoader = GLTFLoader;
 
 // Then import the game (it's a singleton instance, not a class)
 import game from './components/core/Game.js';
