@@ -2,6 +2,9 @@
 
 A browser-based isometric 3D multiplayer game featuring 1v1 tournaments and 40-player battle royale mode.
 
+TL;DR : This game is vibe coded 
+
+
 ![Guild Clash Game](https://placeholder-for-game-screenshot.com)
 
 ## Features
